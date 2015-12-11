@@ -48,11 +48,11 @@ class CartanMatrix(object):
                         print("Error n >=3 or > 4 for SO(n)")
                         return
                     self._id /= 2
-                    self._name = self._translation[self._name]
+                    self._name = self._translation[self._name][1]
                     return self._constructCartanMatrix()
                 elif self._name == "SO" and self._id % 2 == 1:
                     self._id = (self._id - 1) / 2
-                    self._name = self._translation[self._name]
+                    self._name = self._translation[self._name][0]
                     return self._constructCartanMatrix()
                 else:
                     print"Error unknown Lie Algebra, try 'A', 'B','C' or 'D'"
@@ -101,14 +101,18 @@ class LieAlgebra(object):
     def __init__(self, cartanMatrix):
         self.cartan = cartanMatrix
         self.cm = self.cartan.cartan
-        self.n = self.cm.shape[0]  # size of the n times n matrix
+        self._n = self.cm.shape[0]  # size of the n times n matrix
         self.cminv = self.cm.inv()  # inverse of the Cartan matrix
         self.ncminv = matrix2numpy(self.cminv)  # numpy version of the inverse of the Cartan matrix
         self.ncm = matrix2numpy(self.cm)  # numpy version of the Cartan Matrix
-        self.matD = self._matrixD()  # D matrix
-        self.smatD = self._specialMatrixD()  # Special D matrix
-        self.cmID = np.dot(self.ncminv, self.matD)  # matrix product of the inverse Cartan matrix and D matrix
+        self._matD = self._matrixD()  # D matrix
+        self._smatD = self._specialMatrixD()  # Special D matrix
+        self._cmID = np.dot(self.ncminv, self._matD)  # matrix product of the inverse Cartan matrix and D matrix
+        self._cmIDN = self._cmID / np.max(self._matD)  # same as cmID but normalized to the max of matD
         self.proots = self._positiveRoots()  # calc the positive roots
+        # Sum the positive roots
+        self._deltaTimes2 = self.proots.sum(axis=0)
+        self.adjoint = self._getAdjoint()
 
     def _matrixD(self):
         """
@@ -117,9 +121,10 @@ class LieAlgebra(object):
         positions = sum(
             [[(irow, icol) for icol, col in enumerate(row) if (col in [-1, -2, -3]) and (irow < icol)] for irow, row in
              enumerate(self.ncm)], [])
-        result = np.ones((1, self.n))[0]
+        result = np.ones((1, self._n), dtype=object)[0]
+
         for coord1, coord2 in positions:
-            result[coord2] = self.cm[coord2, coord1] / self.cm[coord1, coord2] * result[coord1]
+            result[coord2] = Rational(self.cm[coord2, coord1], self.cm[coord1, coord2]) * result[coord1]
         return np.diagflat(result)
 
     def _simpleProduct(self, v1, v2, cmID):
@@ -128,11 +133,11 @@ class LieAlgebra(object):
             v2 = np.array(v2)
         if type(v1) == list:
             v1 = np.array(v1)
-        return 1 / 2. * np.dot(np.dot(v1, cmID), v2.transpose())[0, 0]
+        return Rational(1, 2) * (np.dot(np.dot(v1, cmID), v2.transpose())[0, 0])
 
     def _longestWeylWord(self):
         # returns the longest Weyl word: from the Lie manual see Susyno
-        weight = [-1] * self.n
+        weight = [-1] * self._n
         result = []
         while map(abs, weight) != weight:
             for iel, el in enumerate(weight):
@@ -149,15 +154,15 @@ class LieAlgebra(object):
         result = cp.deepcopy(weight)
         result[i - 1] = -weight[i - 1]
         for ii in range(1, 5):
-            if self.smatD[i - 1, ii - 1] != 0:
-                result[self.smatD[i - 1, ii - 1] - 1] += weight[i - 1]
+            if self._smatD[i - 1, ii - 1] != 0:
+                result[self._smatD[i - 1, ii - 1] - 1] += weight[i - 1]
         return result
 
     def _specialMatrixD(self):
-        result = SparseMatrix(self.n, 4, 0)
-        for i in range(1, self.n + 1):
+        result = SparseMatrix(self._n, 4, 0)
+        for i in range(1, self._n + 1):
             k = 1
-            for j in range(1, self.n + 1):
+            for j in range(1, self._n + 1):
                 if self.cm[i - 1, j - 1] == -1:
                     result[i - 1, k - 1] = j
                     k += 1
@@ -184,9 +189,9 @@ class LieAlgebra(object):
             counter += 1
             wL.append([])
             for j in range(1, len(wL[counter - 1]) + 1):
-                for i in range(1, self.n + 1):
+                for i in range(1, self._n + 1):
                     if wL[counter - 1][j - 1][i - 1] > 0:
-                        aux = self._reflectWeight(wL[counter - 1][j - 1], i)[i + 1 - 1:self.n + 1]
+                        aux = self._reflectWeight(wL[counter - 1][j - 1], i)[i + 1 - 1:self._n + 1]
                         if aux == map(abs, aux):
                             wL[counter].append(self._reflectWeight(wL[counter - 1][j - 1], i))
             result = result + wL[counter]  # Join the list
@@ -208,13 +213,13 @@ class LieAlgebra(object):
         """
         Returns the positive roots of a given group
         """
-        aux1 = [[KroneckerDelta(i, j) for j in range(1, self.n + 1)] for i in range(1, self.n + 1)]
+        aux1 = [[KroneckerDelta(i, j) for j in range(1, self._n + 1)] for i in range(1, self._n + 1)]
         count = 0
         weights = cp.copy(self.cm)
         while count < weights.rows:
             count += 1
             aux2 = cp.copy(aux1[count - 1])
-            for inti in range(1, self.n + 1):
+            for inti in range(1, self._n + 1):
                 aux3 = cp.copy(aux2)
                 aux3[inti - 1] += 1
                 if self._findM(aux1, aux2, inti) - weights[count - 1, inti - 1] > 0 and aux1.count(aux3) == 0:
@@ -233,11 +238,11 @@ class LieAlgebra(object):
             index = 0
             dWeight = weight
             i = 1
-            while i <= self.n:
+            while i <= self._n:
                 if (dWeight[i - 1] < 0):
                     index += 1
                     dWeight = self._reflectWeight(dWeight, i)
-                    i = min([self.smatD[i - 1, 0], i + 1])
+                    i = min([self._smatD[i - 1, 0], i + 1])
                 else:
                     i += 1
             return [dWeight, index]
@@ -261,11 +266,10 @@ class LieAlgebra(object):
         def sortList(a, b):
             tp1 = list(np.dot(-(a - b), self.ncminv)[0])
             return cmp(tp1, [0] * a.shape[1])
+
         # The Sorting looks to be identical to what was done in SUSYNO willl require further checking at some point
         listw.sort(sortList)
         # listw = [np.array([[1,1]]),np.array([[0,0]])]
-        # Sum the positive roots
-        deltaTimes2 = self.proots.sum(axis=0)
         functionaux = {tuple(listw[0].ravel()): 1}
         result = [[listw[0], 1]]
         for j in range(2, len(listw) + 1):
@@ -276,9 +280,9 @@ class LieAlgebra(object):
                 while aux1 != 0:
                     aux2 = k * (self.proots[i - 1] + listw[j - 1])
                     if key in functionaux:
-                        functionaux[key] += 2 * aux1 * self._simpleProduct(aux2, [self.proots[i - 1]], self.cmID)
+                        functionaux[key] += 2 * aux1 * self._simpleProduct(aux2, [self.proots[i - 1]], self._cmID)
                     else:
-                        functionaux[key] = 2 * aux1 * self._simpleProduct(aux2, [self.proots[i - 1]], self.cmID)
+                        functionaux[key] = 2 * aux1 * self._simpleProduct(aux2, [self.proots[i - 1]], self._cmID)
                     k += 1
                     # update aux1 value
                     kkey = tuple(self._dominantConjugate(k * self.proots[i - 1] + listw[j - 1])[0])
@@ -286,7 +290,128 @@ class LieAlgebra(object):
                         aux1 = functionaux[kkey]
                     else:
                         aux1 = 0
-            functionaux[key] /= self._simpleProduct(listw[0] + listw[j - 1] + deltaTimes2,
-                                                    listw[0] - listw[j - 1], self.cmID)
+            functionaux[key] /= self._simpleProduct(listw[0] + listw[j - 1] + self._deltaTimes2,
+                                                    listw[0] - listw[j - 1], self._cmID)
             result.append([listw[j - 1], functionaux[tuple(listw[j - 1].ravel())]])
         return result
+
+    def casimir(self, irrep):
+        """
+        Returns the casimir of a given irrep
+        """
+        irrep = np.array([irrep])
+        return self._simpleProduct(irrep, irrep + self._deltaTimes2, self._cmIDN)
+
+    def dimR(self, irrep):
+        """
+        Returns the dimention of representation irrep
+        """
+        if not (type(irrep) == np.ndarray):
+            irrep = np.array([irrep])
+        delta = Rational(1, 2) * self._deltaTimes2
+        if self.cartan._name == 'A' and self.cartan._id == 1:
+            delta = np.array([delta])
+        result = np.prod([
+                             self._simpleProduct([self.proots[i - 1]], irrep + delta, self._cmID) / self._simpleProduct(
+                                 [self.proots[i - 1]], [delta], self._cmID)
+                             for i in range(1, len(self.proots) + 1)], axis=0)
+        return int(result)
+
+    def _representationIndex(self, irrep):
+        delta = np.ones((1, self._n), dtype=int)
+        # Factor of 2 ensures is due to the fact that SimpleProduct is defined such that Max[<\[Alpha],\[Alpha]>]=1 (considering all positive roots), but we would want it to be =2
+        return Rational(self.dimR(irrep), self.dimR(self.adjoint)) * 2 * self._simpleProduct(irrep, irrep + 2 * delta,
+                                                                                             self._cmID)
+
+    def _getAdjoint(self):
+        # returns the adjoint of the gauge group
+        return np.array([self.proots[-1]])  # recast the expression
+
+
+    def _repsUpToDimNAuxMethod(self, weight, digit, max, reap):
+        """
+        This is a recursive auxiliary method of repsUpToDimN
+        """
+        waux = cp.deepcopy(weight)
+        waux[digit] = 0
+        if digit == len(weight) - 1:
+            while self.dimR(np.array([waux])) <= max:
+                reap.append(cp.deepcopy([int(el) for el in waux.ravel()]))
+                waux[digit] += 1
+        else:
+            while self.dimR(np.array([waux])) <= max:
+                self._repsUpToDimNAuxMethod(waux, digit + 1, max, reap)
+                waux[digit] += 1
+
+    def repsUpToDimN(self, maxdim):
+        """
+        returns the list of irreps of dim less or equal to maxdim
+        """
+        reap = []
+        self._repsUpToDimNAuxMethod(np.zeros((1, self._n))[0], 0, maxdim, reap)
+        # sort the list according to dimension
+        def sortByDimension(a, b):
+            dma, dmb = self.dimR(a), self.dimR(b)
+            if dma < dmb:
+                return -1
+            elif dma > dmb:
+                return 1
+            else:
+                return 0
+
+        reap.sort(sortByDimension)
+        return reap
+
+    def _getGroupWithRankNsqr(self, n):
+        """
+        returns the list of algebra with rank equal to n^2
+        """
+        res = []
+        if n > 0: res.append(("A", n))
+        if n > 2: res.append(("D", n))
+        if n > 1: res.append(("B", n))
+        if n > 2: res.append(("C", n))
+        if n == 2: res.append(("G",2))
+        if n == 4: res.append(("F",4))
+        if n == 6: res.append(("E",6))
+        if n == 7: res.append(("E",7))
+        if n == 8: res.append(("E",8))
+        return res
+
+    def _cmToFamilyAndSeries(self):
+        aux = self._getGroupWithRankNsqr(self._n)
+        # create the corresponding Cartan matrix
+        cartans = [CartanMatrix(*el).cartan for el in aux]
+        # find the position of the current group in this list
+        ind = [iel for iel,el in enumerate(cartans) if el == self.cm][0]
+        return aux[ind]
+
+    def _conjugacyClass(self,irrep):
+        if not(type(irrep) ==np.ndarray):
+            irrep = np.array(irrep)
+        series,n = self._cmToFamilyAndSeries()
+        if series == "A":
+            return [np.sum([i * irrep[i-1] for i in range(1,n+1)])%(n+1)]
+        if series == "B":
+            return [irrep[n-1]%2]
+        if series == "C":
+            return [np.sum([irrep[i-1] for i in range(1,n+1,2)])%2]
+        if series == "D" and n%2 == 1:
+            return [(irrep[-2] + irrep[-1])%2,
+                    (2*np.sum([irrep[i-1] for i in range(1,n-1,2)])
+                    + (n-2)*irrep[-2] + n * irrep[-1])%4]
+        if series == "D" and n%2 == 0:
+            return [(irrep[-2]+irrep[-1])%2,
+                    (2*np.sum([irrep[i-1] for i in range(1,n-2,2)])
+                     +(n-2)*irrep[-2]+n*irrep[-1])%4]
+        if series == "E" and n == 6:
+            return [(irrep[0]-irrep[1]+irrep[3]-irrep[4])%3]
+        if series == "E" and n == 7:
+            return [(irrep[3]+irrep[5]+irrep[6])%2]
+        if series == "E" and n == 8:
+            return [0]
+        if series == "F":
+            return [0]
+        if series == "G":
+            return [0]
+

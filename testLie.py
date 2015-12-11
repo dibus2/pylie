@@ -4,10 +4,12 @@ import pudb
 
 a = CartanMatrix("SU",2)
 b = CartanMatrix("SU",3)
+c = CartanMatrix("SU",9)
 aold = lie.CartanMatrix("SU",2)
 bold = lie.CartanMatrix("SU",3)
 ALie = LieAlgebra(a)
 BLie = LieAlgebra(b)
+SU9 = LieAlgebra(c)
 
 print("***** Check WeylOrbit function *****")
 print("aold [0]")
@@ -38,4 +40,85 @@ lie.DominantWeights(bold,[1,1])
 print("b [1,1]")
 BLie._dominantWeights([1,1])
 
+
+print("***** Check Casimir *****")
+print("SU2:")
+SU2casimir = [ALie.casimir([n]) for n in range(1,101)]
+print(SU2casimir)
+print("SU3:")
+SU3irreps = [[0, 0], [1, 0], [0, 1], [0, 2], [2, 0], [1, 1], [3, 0], [0, 3], [2,1], [1, 2], [4, 0], [0, 4], [0, 5], [5, 0], [1, 3], [3, 1], [2, 2], \
+[6, 0], [0, 6], [4, 1], [1, 4], [7, 0], [0, 7], [3, 2], [2, 3], [0,
+8], [8, 0], [5, 1], [1, 5], [9, 0], [0, 9], [2, 4], [4, 2], [1, 6],
+[6, 1], [3, 3], [10, 0], [0, 10], [0, 11], [11, 0], [7, 1], [1, 7],
+[5, 2], [2, 5], [4, 3], [3, 4], [12, 0], [0, 12], [8, 1], [1, 8]]
+SU3casimir = [BLie.casimir(el) for el in SU3irreps]
+print(SU3casimir)
+print("SU9:")
+SU9irreps = [[0, 0, 0, 0, 0, 0, 0, 0], [1, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 1], [0, 1, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 1, 0], [2, 0, \
+0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 2], [1, 0, 0, 0, 0, 0, 0, 1], [0, 0, 1, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 1, 0, 0]]
+
+SU9casimir = [SU9.casimir(el) for el in SU9irreps]
+print(SU9casimir)
+
+print("***** Check DimR *****")
+print("SU2:")
+SU2dimr = [ALie.dimR([n]) for n in range(1,101)]
+print(SU2dimr)
+print("SU3: dim irreps:")
+SU3dimr = [BLie.dimR(el) for el in SU3irreps]
+print(SU3dimr)
+#print("SU9:")
+#SU9dimr = [SU9.dimR(el) for el in SU9irreps]
+#print(SU9dimr)
+
+print("representation index functio: ")
+print("SU3")
+irrepstocheckSU3 = [[1,n] for n in range(12)]
+repindex = [BLie._representationIndex(np.array([el])) for el in irrepstocheckSU3]
+for rep,index in zip(irrepstocheckSU3,repindex):
+    print(index," ", rep)
+
+print("RepsUpToDimN:")
+print("SU2")
+print(ALie.repsUpToDimN(5))
+print("SU3")
+print(BLie.repsUpToDimN(10))
+print("SU5")
+d = CartanMatrix("SU",5)
+SU5 = LieAlgebra(d)
+print(SU5.repsUpToDimN(10))
+print("Group with Rank N^2:",8)
+print(SU5._getGroupWithRankNsqr(8))
+print(SU5._cmToFamilyAndSeries())
+print("Conjugacy class")
+print("SU5")
+SU5irreps = SU5.repsUpToDimN(10)
+print(SU5irreps)
+print([SU5._conjugacyClass(el)for el in SU5irreps])
+
+print("SO10")
+e = CartanMatrix("SO",10)
+SO10 = LieAlgebra(e)
+SO10irreps = SO10.repsUpToDimN(100)
+print(SO10irreps)
+print([SO10._conjugacyClass(el) for el in SO10irreps[2:]])
+
+print("SO11")
+SO11 = LieAlgebra(CartanMatrix("SO", 11))
+SO11irreps = SO11.repsUpToDimN(100)
+print(SO11irreps)
+print([SO11._conjugacyClass(el) for el in SO11irreps])
+
+print("SP10")
+SP10 = LieAlgebra(CartanMatrix("SP", 10))
+SP10irreps = SP10.repsUpToDimN(10)
+print(SP10irreps)
+print([SP10._conjugacyClass(el) for el in SP10irreps])
+
+
+print("SP12")
+SP12 = LieAlgebra(CartanMatrix("SP", 12))
+SP12irreps = SP12.repsUpToDimN(100)
+print(SP12irreps)
+print([SP12._conjugacyClass(el) for el in SP12irreps])
 
