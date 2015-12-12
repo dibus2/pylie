@@ -113,6 +113,7 @@ class LieAlgebra(object):
         # Sum the positive roots
         self._deltaTimes2 = self.proots.sum(axis=0)
         self.adjoint = self._getAdjoint()
+        self.longestWeylWord = self._longestWeylWord()
 
     def _matrixD(self):
         """
@@ -327,7 +328,6 @@ class LieAlgebra(object):
         # returns the adjoint of the gauge group
         return np.array([self.proots[-1]])  # recast the expression
 
-
     def _repsUpToDimNAuxMethod(self, weight, digit, max, reap):
         """
         This is a recursive auxiliary method of repsUpToDimN
@@ -352,13 +352,9 @@ class LieAlgebra(object):
         # sort the list according to dimension
         def sortByDimension(a, b):
             dma, dmb = self.dimR(a), self.dimR(b)
-            if dma < dmb:
-                return -1
-            elif dma > dmb:
-                return 1
-            else:
-                return 0
-
+            repa,repb = self._representationIndex(np.array([a])),self._representationIndex(np.array([b]))
+            conja, conjb = self._conjugacyClass(a),self._conjugacyClass(b)
+            return cmp(tuple(flatten([dma,repa,conja])),tuple(flatten([dmb,repb,conjb])))
         reap.sort(sortByDimension)
         return reap
 
@@ -371,11 +367,11 @@ class LieAlgebra(object):
         if n > 2: res.append(("D", n))
         if n > 1: res.append(("B", n))
         if n > 2: res.append(("C", n))
-        if n == 2: res.append(("G",2))
-        if n == 4: res.append(("F",4))
-        if n == 6: res.append(("E",6))
-        if n == 7: res.append(("E",7))
-        if n == 8: res.append(("E",8))
+        if n == 2: res.append(("G", 2))
+        if n == 4: res.append(("F", 4))
+        if n == 6: res.append(("E", 6))
+        if n == 7: res.append(("E", 7))
+        if n == 8: res.append(("E", 8))
         return res
 
     def _cmToFamilyAndSeries(self):
@@ -383,35 +379,54 @@ class LieAlgebra(object):
         # create the corresponding Cartan matrix
         cartans = [CartanMatrix(*el).cartan for el in aux]
         # find the position of the current group in this list
-        ind = [iel for iel,el in enumerate(cartans) if el == self.cm][0]
+        ind = [iel for iel, el in enumerate(cartans) if el == self.cm][0]
         return aux[ind]
 
-    def _conjugacyClass(self,irrep):
-        if not(type(irrep) ==np.ndarray):
+    def _conjugacyClass(self, irrep):
+        if not (type(irrep) == np.ndarray):
             irrep = np.array(irrep)
-        series,n = self._cmToFamilyAndSeries()
+        series, n = self._cmToFamilyAndSeries()
         if series == "A":
-            return [np.sum([i * irrep[i-1] for i in range(1,n+1)])%(n+1)]
+            return [np.sum([i * irrep[i - 1] for i in range(1, n + 1)]) % (n + 1)]
         if series == "B":
-            return [irrep[n-1]%2]
+            return [irrep[n - 1] % 2]
         if series == "C":
-            return [np.sum([irrep[i-1] for i in range(1,n+1,2)])%2]
-        if series == "D" and n%2 == 1:
-            return [(irrep[-2] + irrep[-1])%2,
-                    (2*np.sum([irrep[i-1] for i in range(1,n-1,2)])
-                    + (n-2)*irrep[-2] + n * irrep[-1])%4]
-        if series == "D" and n%2 == 0:
-            return [(irrep[-2]+irrep[-1])%2,
-                    (2*np.sum([irrep[i-1] for i in range(1,n-2,2)])
-                     +(n-2)*irrep[-2]+n*irrep[-1])%4]
+            return [np.sum([irrep[i - 1] for i in range(1, n + 1, 2)]) % 2]
+        if series == "D" and n % 2 == 1:
+            return [(irrep[-2] + irrep[-1]) % 2,
+                    (2 * np.sum([irrep[i - 1] for i in range(1, n - 1, 2)])
+                     + (n - 2) * irrep[-2] + n * irrep[-1]) % 4]
+        if series == "D" and n % 2 == 0:
+            return [(irrep[-2] + irrep[-1]) % 2,
+                    (2 * np.sum([irrep[i - 1] for i in range(1, n - 2, 2)])
+                     + (n - 2) * irrep[-2] + n * irrep[-1]) % 4]
         if series == "E" and n == 6:
-            return [(irrep[0]-irrep[1]+irrep[3]-irrep[4])%3]
+            return [(irrep[0] - irrep[1] + irrep[3] - irrep[4]) % 3]
         if series == "E" and n == 7:
-            return [(irrep[3]+irrep[5]+irrep[6])%2]
+            return [(irrep[3] + irrep[5] + irrep[6]) % 2]
         if series == "E" and n == 8:
             return [0]
         if series == "F":
             return [0]
         if series == "G":
             return [0]
+
+
+    def conjugateIrrep(self,irrep):
+        """
+        returns the conjugated irrep
+        """
+        lbd = lambda weight,ind: self._reflectWeight(weight, ind)
+        res = -reduce(lbd, [np.array([irrep])[0]]+self.longestWeylWord)
+        return res
+
+
+
+
+
+#    def _repMinimalMatrices(self, maxW):
+        # auxiliary function for the repMatrices method base on the Chevalley-Serre relations
+
+
+
 
