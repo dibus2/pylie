@@ -271,13 +271,13 @@ class LieAlgebra(object):
         # The Sorting looks to be identical to what was done in SUSYNO willl require further checking at some point
         listw.sort(sortList)
         # listw = [np.array([[1,1]]),np.array([[0,0]])]
-        functionaux = {tuple(listw[0].ravel()): 1}
+        functionaux = {self._nptokey(listw[0]): 1}
         result = [[listw[0], 1]]
         for j in range(2, len(listw) + 1):
             for i in range(1, len(self.proots) + 1):
                 k = 1
-                aux1 = functionaux[tuple(self._dominantConjugate(k * self.proots[i - 1] + listw[j - 1])[0])]
-                key = tuple(listw[j - 1].ravel())
+                aux1 = self._indic(functionaux,tuple(self._dominantConjugate(k * self.proots[i - 1] + listw[j - 1])[0]))
+                key = self._nptokey(listw[j - 1])
                 while aux1 != 0:
                     aux2 = k * (self.proots[i - 1] + listw[j - 1])
                     if key in functionaux:
@@ -293,7 +293,7 @@ class LieAlgebra(object):
                         aux1 = 0
             functionaux[key] /= self._simpleProduct(listw[0] + listw[j - 1] + self._deltaTimes2,
                                                     listw[0] - listw[j - 1], self._cmID)
-            result.append([listw[j - 1], functionaux[tuple(listw[j - 1].ravel())]])
+            result.append([listw[j - 1], self._indic(functionaux,self._nptokey(listw[j - 1]))])
         return result
 
     def casimir(self, irrep):
@@ -352,9 +352,10 @@ class LieAlgebra(object):
         # sort the list according to dimension
         def sortByDimension(a, b):
             dma, dmb = self.dimR(a), self.dimR(b)
-            repa,repb = self._representationIndex(np.array([a])),self._representationIndex(np.array([b]))
-            conja, conjb = self._conjugacyClass(a),self._conjugacyClass(b)
-            return cmp(tuple(flatten([dma,repa,conja])),tuple(flatten([dmb,repb,conjb])))
+            repa, repb = self._representationIndex(np.array([a])), self._representationIndex(np.array([b]))
+            conja, conjb = self._conjugacyClass(a), self._conjugacyClass(b)
+            return cmp(tuple(flatten([dma, repa, conja])), tuple(flatten([dmb, repb, conjb])))
+
         reap.sort(sortByDimension)
         return reap
 
@@ -411,22 +412,209 @@ class LieAlgebra(object):
         if series == "G":
             return [0]
 
-
-    def conjugateIrrep(self,irrep):
+    def conjugateIrrep(self, irrep):
         """
         returns the conjugated irrep
         """
-        lbd = lambda weight,ind: self._reflectWeight(weight, ind)
-        res = -reduce(lbd, [np.array([irrep])[0]]+self.longestWeylWord)
+        lbd = lambda weight, ind: self._reflectWeight(weight, ind)
+        res = -reduce(lbd, [np.array([irrep])[0]] + self.longestWeylWord)
         return res
 
+    def _weights(self, weights):
+        """
+        Reorder the weights of conjugate representations
+        so that RepMatrices[group,ConjugateIrrep[group,w]]=-Conjugate[RepMatrices[group,w]]
+        and Invariants[group,{w,ConjugateIrrep[group,w]},{False,False}]=a[1]b[1]+...+a[n]b[n]
+        """
+        if (cmp(list(weights), list(self.conjugateIrrep(weights))) in [-1, 0]) and np.all(
+                        (self.conjugateIrrep(weights)) != weights):
+            return [np.array([-1, 1]) * el for el in self._weights(self.conjugateIrrep(weights))]
+        else:
+            dw = self._dominantWeights(weights)
+            result = sum([[[np.array(el), dw[ii][1]] for el in self._weylOrbit(self._tolist(dw[ii][0][0]))] for ii in
+                          range(len(dw))], [])
 
+            def sortList(a, b):
+                tp1 = list(np.dot(-(a[0] - b[0]), self.ncminv).ravel())
+                return cmp(tp1, [0] * a[0].shape[0])
 
+            result.sort(sortList)
+            return result
 
-
-#    def _repMinimalMatrices(self, maxW):
+    def repMinimalMatrices(self, maxW):
+        """
+        1) The output of this function is a list of sets of 3 matrices:
+            {{E1, F1, H1},{E2, F2, H2},...,{En, Fn, Hn}}, where n is the group's rank.
+            Hi are diagonal matrices, while Ei and Fi are raising and lowering operators.
+            These matrices obey the Chevalley-Serre relations: [Ei, Ej]=delta_ij Hi, [Hi,Ej]= AjiEj, [Hi,Fj]= -AjiFj and [Hi,Hj=0
+            here A is the Cartan matrix of the group/algebra.
+        2) With the exception of SU(2) [n=1], these 3n matrices Ei, Fi, Hi do not generate the Lie algebra,
+            which is bigger, as some raising and lowering operators are missing.
+            However, these remaining operators can be obtained through simple commutations: [Ei,Ej], [Ei,[Ej,Ek]],...,[Fi,Fj], [Fi,[Fj,Fk]].
+        3) This method clearly must assume a particular basis for each representation so the results are basis dependent.
+        4) Also, unlike RepMatrices, the matrices given by this function are not Hermitian and therefore they do not conform with the usual requirements of model building in particle physics.
+            However, for some applications, they might be all that is needed.
+        """
         # auxiliary function for the repMatrices method base on the Chevalley-Serre relations
+        cmaxW = self.conjugateIrrep(self._tolist(maxW))
+        if cmp(self._tolist(maxW), self._tolist(cmaxW)) in [-1, 0] and not(np.all(cmaxW == maxW)):
+            return [[-1*el[1],-1*el[0],-1*el[2]] for el in self.repMinimalMatrices(cmaxW)]  # TODO selection of the returned array [All,2,1,3]
+        else:
+            listw = self._weights(self._tolist(maxW))
+            up, dim, down = {}, {}, {}
+            for i in range(len(listw)):
+                dim[self._nptokey(listw[i][0])] = listw[i][1]
+            up[self._nptokey(listw[0][0])] = np.zeros((1, self._n),dtype=int)
+            for element in range(1, len(listw)):
+                matrixT = [[]]
+                for j in range(self._n):
+                    col = [[]]
+                    for i in range(self._n):
+                        key1 = self._nptokey(listw[element][0] + self.ncm[i])
+                        key2 = self._nptokey(listw[element][0] + self.ncm[i] + self.ncm[j])
+                        key3 = self._nptokey(listw[element][0] + self.ncm[j])
+                        dim1 = self._indic(dim,key1)
+                        dim2 = self._indic(dim,key2)
+                        dim3 = self._indic(dim,key3)
+                        ax = 1 if col == [[]] else 0
+                        if dim1 != 0 and dim3 != 0:
+                            if dim2 != 0:
+                                aux1 = up[self._nptokey(listw[element][0] + self.ncm[i])][j]
+                                aux2 = down[self._nptokey(listw[element][0] + self.ncm[i] + self.ncm[j])][i]
+                                if i != j:
+                                    if type(col) != np.ndarray:
+                                        col = np.dot(aux1,aux2)
+                                    else:
+                                        col = np.append(col, np.dot(aux1, aux2), axis=ax)
+                                else:
+                                    if type(col) != np.ndarray:
+                                        col = np.dot(aux1, aux2) + (
+                                            listw[element][0][i] + self.ncm[i, i]) * np.eye(
+                                            dim1,dtype=object)
+                                    else:
+                                        col = np.append(col, np.dot(aux1, aux2) + (
+                                            listw[element][0][i] + self.ncm[i, i]) * np.eye(
+                                            dim1,dtype=object), axis=ax)
+                            else:
+                                if i != j:
+                                    if type(col) != np.ndarray:
+                                        col = np.zeros((dim1,dim3),dtype=object)
+                                    else:
+                                        col = np.append(col, np.zeros((dim1, dim3)),axis=ax)
+                                else:
+                                    tmp = (listw[element][0][i] + self.ncm[i, i]) * np.eye(dim1,dtype=object)
+                                    if type(tmp) != np.ndarray:
+                                        tmp = np.array([[tmp]])
+                                    if type(col) != np.ndarray:
+                                        col = tmp
+                                    else:
+                                        col = np.append(col, tmp, axis=ax)
+                    if type(col) != list:
+                        if type(matrixT) != np.ndarray:
+                            matrixT = col.transpose()
+                        else:
+                            matrixT = np.append(matrixT, col.transpose(), axis=0)
+                matrix = matrixT.transpose()
+                aux1 = sum([self._indic(dim, self._nptokey(listw[element][0] + self.ncm[i])) for i in range(self._n)])
+                aux2 = self._indic(dim, self._nptokey(listw[element][0]))
+                cho = self._decompositionTypeCholesky(matrix)
+                aux3 = np.pad(cho, pad_width=((0, max(aux1-cho.shape[0],0)), (0, max(aux2 - cho.shape[1],0))),
+                              mode='constant')
+                aux4 = aux3.transpose()
+                if np.all((np.dot(aux3, aux4)) != matrix):
+                    print("Error in repminimal matrices:", aux3, " ", aux4, " ", matrix)
+                # Obtain the blocks in  (w+\[Alpha]i)i and wj. Use it to feed the recursive algorith so that we can calculate the next w's
+                aux1 = np.array(
+                    [[0, 0]])  # format (+-): (valid cm raise index i - 1, start position of weight w+cm[[i-1]]-1)
+                for i in range(self._n):
+                    key = self._nptokey(listw[element][0] + self.ncm[i])
+                    if key in dim:
+                        aux1 = np.append(aux1, np.array([[i + 1, aux1[-1, 1] + dim[key]]],dtype=object), axis=0)
+                for i in range(len(aux1) - 1):
+                    index = aux1[i + 1, 0]
+                    posbegin = aux1[i, 1] + 1
+                    posend = aux1[i + 1, 1]
+                    key = self._nptokey(listw[element][0] + self.ncm[index - 1])
+                    aux2 = down[key] if key in down else [[]] * self._n
+                    aux2[index - 1] = aux3[posbegin - 1:posend]
+                    down[key] = aux2
+                    key2 = self._nptokey(listw[element][0])
+                    aux2 = up[key2] if key2 in up else [[]] * self._n
+                    aux2[index - 1] = (aux4.transpose()[posbegin-1:posend]).transpose()
+                    up[key2] = aux2
+            # Put the collected pieces together and build the 3n matrices: hi,ei,fi
+            begin, end = {self._nptokey(listw[0][0]): 1}, {self._nptokey(listw[0][0]): listw[0][1]}
+            for element in range(1, len(listw)):
+                key = self._nptokey(listw[element][0])
+                key1 = self._nptokey(listw[element - 1][0])
+                begin[key] = begin[key1] + listw[element - 1][1]
+                end[key] = end[key1] + listw[element][1]
+            aux2 = sum([listw[i][1] for i in range(len(listw))])
+            aux3 = np.zeros((aux2,aux2),dtype=object)
+            matrixE, matrixF, matrixH = [], [], []
+            for i in range(self._n):
+                aux6, aux7, aux8 = np.zeros((aux2, aux2), dtype=object),  np.zeros((aux2, aux2), dtype=object), np.zeros((aux2, aux2), dtype=object)# e[i], f[i], h[i]
+                for element in range(len(listw)):
+                    key = self._nptokey(listw[element][0] + self.ncm[i])
+                    key2 = self._nptokey(listw[element][0])
+                    key3 = self._nptokey(listw[element][0] - self.ncm[i])
+                    if key in dim:
+                        b1, e1 = begin[key], end[key]
+                        b2, e2 = begin[key2], end[key2]
+                        aux6[b1 - 1:e1, b2 - 1:e2] = (up[key2][i]).transpose()
+                    if key3 in dim:
+                        b1, e1 = begin[key3], end[key3]
+                        b2, e2 = begin[key2], end[key2]
+                        aux7[b1 - 1:e1, b2 - 1:e2] = (down[key2][i]).transpose()
+                    b1, e1 = begin[key2], end[key2]
+                    aux8[b1 - 1:e1, b1 - 1:e1] = listw[element][0][i] * np.eye(listw[element][1],dtype=object)
+                matrixE.append(SparseMatrix(aux6))  # sparse matrix transfo
+                matrixF.append(SparseMatrix(aux7))  # sparse matrix transfo
+                matrixH.append(SparseMatrix(aux8))  # sparse matrix transfo
+            aux1 = [[matrixE[i], matrixF[i], matrixH[i]] for i in range(self._n)]
+            return aux1
 
+    def _decompositionTypeCholesky(self, matrix):
+        """
+        falls back to the regular Cholesky for sym matrices
+        """
+        n = len(matrix)
+        shape = matrix.shape
+        matrix = np.array([int(el) if int(el) == el else el for el in matrix.ravel()] ,dtype=object).reshape(shape)
+        matD = np.zeros((n, n),dtype=object)
+        matL = np.eye(n,dtype=object)
+        for i in range(n):
+            for j in range(i):
+                if matD[j, j] != 0:
+                    if type(matD[j, j])in [Add,Mul]:
+                        coeff = 1/matD[j, j]
+                    else:
+                        coeff = Rational(1,matD[j, j])
+                    matL[i, j] = coeff * (
+                        matrix[i, j] - sum([matL[i, k] * np.conjugate(matL[j, k]) * matD[k, k]
+                                            for k in range(j)])
+                        )
+                else:
+                    matL[i,j] = 0
+            matD[i,i] = matrix[i,i]-sum([matL[i,k]*np.conjugate(matL[i,k])*matD[k,k] for k in range(i)])
+        # get the sqrt of the diagonal matrix:
+        if np.all(matD.transpose() != matD):
+            exit("Error, the matD is not diagonal cannot take the sqrt.")
+        else:
+            matDsqr = diag(*[sqrt(el) for el in matD.diagonal()])
+            result = (matL*matDsqr).transpose()
+            #  Make the resulting matrix as small as possible by eliminating null columns
+            result = np.array([np.array(result.row(i))[0] for i in range(result.rows) if result.row(i) != zeros(1, n)]).transpose()
+        return result
 
+    def _nptokey(self, array):
+        return tuple(array.ravel())
 
+    def _tolist(self, array):
+        return list(array.ravel())
 
+    def _indic(self, dict, key):
+        if key in dict:
+            return dict[key]
+        else:
+            return 0
