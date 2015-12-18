@@ -11,6 +11,7 @@ sys.path.insert(0, '/Applications/HEPtools/sympy-0.7.6')
 import numpy as np
 from sympy import *
 import copy as cp
+import operator
 
 
 class CartanMatrix(object):
@@ -276,7 +277,8 @@ class LieAlgebra(object):
         for j in range(2, len(listw) + 1):
             for i in range(1, len(self.proots) + 1):
                 k = 1
-                aux1 = self._indic(functionaux,tuple(self._dominantConjugate(k * self.proots[i - 1] + listw[j - 1])[0]))
+                aux1 = self._indic(functionaux,
+                                   tuple(self._dominantConjugate(k * self.proots[i - 1] + listw[j - 1])[0]))
                 key = self._nptokey(listw[j - 1])
                 while aux1 != 0:
                     aux2 = k * (self.proots[i - 1] + listw[j - 1])
@@ -293,7 +295,7 @@ class LieAlgebra(object):
                         aux1 = 0
             functionaux[key] /= self._simpleProduct(listw[0] + listw[j - 1] + self._deltaTimes2,
                                                     listw[0] - listw[j - 1], self._cmID)
-            result.append([listw[j - 1], self._indic(functionaux,self._nptokey(listw[j - 1]))])
+            result.append([listw[j - 1], self._indic(functionaux, self._nptokey(listw[j - 1]))])
         return result
 
     def casimir(self, irrep):
@@ -428,10 +430,10 @@ class LieAlgebra(object):
         """
         if (cmp(list(weights), list(self.conjugateIrrep(weights))) in [-1, 0]) and np.all(
                         (self.conjugateIrrep(weights)) != weights):
-            return [np.array([-1, 1]) * el for el in self._weights(self.conjugateIrrep(weights))]
+            return [np.array([-1, 1],dtype=int) * el for el in self._weights(self.conjugateIrrep(weights))]
         else:
             dw = self._dominantWeights(weights)
-            result = sum([[[np.array(el), dw[ii][1]] for el in self._weylOrbit(self._tolist(dw[ii][0][0]))] for ii in
+            result = sum([[[np.array(el,dtype=int), dw[ii][1]] for el in self._weylOrbit(self._tolist(dw[ii][0][0]))] for ii in
                           range(len(dw))], [])
 
             def sortList(a, b):
@@ -457,14 +459,15 @@ class LieAlgebra(object):
         """
         # auxiliary function for the repMatrices method base on the Chevalley-Serre relations
         cmaxW = self.conjugateIrrep(self._tolist(maxW))
-        if cmp(self._tolist(maxW), self._tolist(cmaxW)) in [-1, 0] and not(np.all(cmaxW == maxW)):
-            return [[-1*el[1],-1*el[0],-1*el[2]] for el in self.repMinimalMatrices(cmaxW)]  # TODO selection of the returned array [All,2,1,3]
+        if cmp(self._tolist(maxW), self._tolist(cmaxW)) in [-1, 0] and not (np.all(cmaxW == maxW)):
+            return [[-1 * el[1], -1 * el[0], -1 * el[2]] for el in
+                    self.repMinimalMatrices(cmaxW)]  # TODO selection of the returned array [All,2,1,3]
         else:
             listw = self._weights(self._tolist(maxW))
             up, dim, down = {}, {}, {}
             for i in range(len(listw)):
                 dim[self._nptokey(listw[i][0])] = listw[i][1]
-            up[self._nptokey(listw[0][0])] = np.zeros((1, self._n),dtype=int)
+            up[self._nptokey(listw[0][0])] = np.zeros((1, self._n), dtype=int)
             for element in range(1, len(listw)):
                 matrixT = [[]]
                 for j in range(self._n):
@@ -473,9 +476,9 @@ class LieAlgebra(object):
                         key1 = self._nptokey(listw[element][0] + self.ncm[i])
                         key2 = self._nptokey(listw[element][0] + self.ncm[i] + self.ncm[j])
                         key3 = self._nptokey(listw[element][0] + self.ncm[j])
-                        dim1 = self._indic(dim,key1)
-                        dim2 = self._indic(dim,key2)
-                        dim3 = self._indic(dim,key3)
+                        dim1 = self._indic(dim, key1)
+                        dim2 = self._indic(dim, key2)
+                        dim3 = self._indic(dim, key3)
                         ax = 1 if col == [[]] else 0
                         if dim1 != 0 and dim3 != 0:
                             if dim2 != 0:
@@ -483,26 +486,26 @@ class LieAlgebra(object):
                                 aux2 = down[self._nptokey(listw[element][0] + self.ncm[i] + self.ncm[j])][i]
                                 if i != j:
                                     if type(col) != np.ndarray:
-                                        col = np.dot(aux1,aux2)
+                                        col = np.dot(aux1, aux2)
                                     else:
                                         col = np.append(col, np.dot(aux1, aux2), axis=ax)
                                 else:
                                     if type(col) != np.ndarray:
                                         col = np.dot(aux1, aux2) + (
-                                            listw[element][0][i] + self.ncm[i, i]) * np.eye(
-                                            dim1,dtype=object)
+                                                                       listw[element][0][i] + self.ncm[i, i]) * np.eye(
+                                            dim1, dtype=object)
                                     else:
                                         col = np.append(col, np.dot(aux1, aux2) + (
                                             listw[element][0][i] + self.ncm[i, i]) * np.eye(
-                                            dim1,dtype=object), axis=ax)
+                                            dim1, dtype=object), axis=ax)
                             else:
                                 if i != j:
                                     if type(col) != np.ndarray:
-                                        col = np.zeros((dim1,dim3),dtype=object)
+                                        col = np.zeros((dim1, dim3), dtype=object)
                                     else:
-                                        col = np.append(col, np.zeros((dim1, dim3)),axis=ax)
+                                        col = np.append(col, np.zeros((dim1, dim3)), axis=ax)
                                 else:
-                                    tmp = (listw[element][0][i] + self.ncm[i, i]) * np.eye(dim1,dtype=object)
+                                    tmp = (listw[element][0][i] + self.ncm[i, i]) * np.eye(dim1, dtype=object)
                                     if type(tmp) != np.ndarray:
                                         tmp = np.array([[tmp]])
                                     if type(col) != np.ndarray:
@@ -518,7 +521,7 @@ class LieAlgebra(object):
                 aux1 = sum([self._indic(dim, self._nptokey(listw[element][0] + self.ncm[i])) for i in range(self._n)])
                 aux2 = self._indic(dim, self._nptokey(listw[element][0]))
                 cho = self._decompositionTypeCholesky(matrix)
-                aux3 = np.pad(cho, pad_width=((0, max(aux1-cho.shape[0],0)), (0, max(aux2 - cho.shape[1],0))),
+                aux3 = np.pad(cho, pad_width=((0, max(aux1 - cho.shape[0], 0)), (0, max(aux2 - cho.shape[1], 0))),
                               mode='constant')
                 aux4 = aux3.transpose()
                 if np.all((np.dot(aux3, aux4)) != matrix):
@@ -529,7 +532,7 @@ class LieAlgebra(object):
                 for i in range(self._n):
                     key = self._nptokey(listw[element][0] + self.ncm[i])
                     if key in dim:
-                        aux1 = np.append(aux1, np.array([[i + 1, aux1[-1, 1] + dim[key]]],dtype=object), axis=0)
+                        aux1 = np.append(aux1, np.array([[i + 1, aux1[-1, 1] + dim[key]]], dtype=object), axis=0)
                 for i in range(len(aux1) - 1):
                     index = aux1[i + 1, 0]
                     posbegin = aux1[i, 1] + 1
@@ -540,7 +543,7 @@ class LieAlgebra(object):
                     down[key] = aux2
                     key2 = self._nptokey(listw[element][0])
                     aux2 = up[key2] if key2 in up else [[]] * self._n
-                    aux2[index - 1] = (aux4.transpose()[posbegin-1:posend]).transpose()
+                    aux2[index - 1] = (aux4.transpose()[posbegin - 1:posend]).transpose()
                     up[key2] = aux2
             # Put the collected pieces together and build the 3n matrices: hi,ei,fi
             begin, end = {self._nptokey(listw[0][0]): 1}, {self._nptokey(listw[0][0]): listw[0][1]}
@@ -550,10 +553,11 @@ class LieAlgebra(object):
                 begin[key] = begin[key1] + listw[element - 1][1]
                 end[key] = end[key1] + listw[element][1]
             aux2 = sum([listw[i][1] for i in range(len(listw))])
-            aux3 = np.zeros((aux2,aux2),dtype=object)
+            aux3 = np.zeros((aux2, aux2), dtype=object)
             matrixE, matrixF, matrixH = [], [], []
             for i in range(self._n):
-                aux6, aux7, aux8 = np.zeros((aux2, aux2), dtype=object),  np.zeros((aux2, aux2), dtype=object), np.zeros((aux2, aux2), dtype=object)# e[i], f[i], h[i]
+                aux6, aux7, aux8 = np.zeros((aux2, aux2), dtype=object), np.zeros((aux2, aux2), dtype=object), np.zeros(
+                    (aux2, aux2), dtype=object)  # e[i], f[i], h[i]
                 for element in range(len(listw)):
                     key = self._nptokey(listw[element][0] + self.ncm[i])
                     key2 = self._nptokey(listw[element][0])
@@ -567,12 +571,60 @@ class LieAlgebra(object):
                         b2, e2 = begin[key2], end[key2]
                         aux7[b1 - 1:e1, b2 - 1:e2] = (down[key2][i]).transpose()
                     b1, e1 = begin[key2], end[key2]
-                    aux8[b1 - 1:e1, b1 - 1:e1] = listw[element][0][i] * np.eye(listw[element][1],dtype=object)
+                    aux8[b1 - 1:e1, b1 - 1:e1] = listw[element][0][i] * np.eye(listw[element][1], dtype=object)
                 matrixE.append(SparseMatrix(aux6))  # sparse matrix transfo
                 matrixF.append(SparseMatrix(aux7))  # sparse matrix transfo
                 matrixH.append(SparseMatrix(aux8))  # sparse matrix transfo
             aux1 = [[matrixE[i], matrixF[i], matrixH[i]] for i in range(self._n)]
             return aux1
+
+    def repMatrices(self, maxW):
+        """
+        This method returns the complete set of matrices that make up a representation, with the correct casimir and trace normalizations
+        1) The matrices {Subscript[M, i]} given by this method are in conformity with the usual requirements in particle physics: \!\(
+            M_a^\Dagger = M_a ; Tr(M_a M_b = S(rep) \Delta_ab; Sum_a M_a M_a = C(rep) 1.
+        """
+
+        # Let's gather the minimal rep matrices
+        if type(maxW) == list:
+            maxW = np.array([maxW])
+        rep = self.repMinimalMatrices(maxW)
+        dimG = 2 * len(self.proots) + len(self.ncm)
+        dimR = self.dimR(maxW)
+        sR = Rational(self.casimir(self._tolist(maxW)) * dimR, dimG)
+        if dimR == 1:
+            #  Trivial representation, the matrices are null
+            listTotal = [rep[0][0] for i in range(dimG)]
+            return listTotal
+        listE, listF, listH = [el[0] for el in rep], [el[1] for el in rep], [el[2] for el in rep]
+        # If it's not the trivial rep, generate the matrices of the remaining algebra elements.
+        #  The positive roots of the algebra serve as a guide in this process of doing comutators
+        pudb.set_trace()
+        for i in range(self._n, len(self.proots)):
+            j = 0
+            aux = []
+            while aux == []:
+                aux = [iel for iel, el in enumerate(self.proots[:i]) if np.all(el == self.proots[i] - self.proots[j])]
+                if aux == []:
+                    j+=1
+            listE.append(listE[aux[0]].multiply(listE[j]).add(-listE[j].multiply(listE[aux[0]])))
+            listF.append(listF[aux[0]].multiply(listF[j]).add(- listF[j].multiply(listF[aux[0]])))
+        for i in range(len(listE)):
+            # Change from the operadores T+, T- to Tx,Ty
+            aux = listE[i]
+            listE[i] = listE[i].add(listF[i])
+            listF[i] = aux.add(-listF[i])
+            # Control the normalization of the Tx,Ty matrices with the trace condition
+            listE[i] = SparseMatrix(listE[i]*sqrt(sR)/sqrt((listE[i].multiply(listE[i])).trace()))
+            listF[i] = SparseMatrix(listF[i]*sqrt(sR)/sqrt((listF[i].multiply(listF[i])).trace()))
+        matrixCholesky = np.dot(self.ncminv,self._matD)  #  See the casimir expression in a book on lie algebras
+        aux = (SparseMatrix(matrixCholesky).cholesky()).transpose()  # get the actual cholesky decomposition from sympy
+        listH = [reduce(operator.add,[listH[j]*aux[i, j] for j in range(self._n)]) for i in range(self._n)]
+        # Up to multiplicative factors, Tz are now correct. We fix again the normalization with the trace condition
+        listH = [listH[i]*(sqrt(sR)/sqrt((listH[i].multiply(listH[i])).trace())) for i in range(self._n)]
+        listTotal = [listE,listF,listH]
+        return listTotal
+
 
     def _decompositionTypeCholesky(self, matrix):
         """
@@ -580,31 +632,32 @@ class LieAlgebra(object):
         """
         n = len(matrix)
         shape = matrix.shape
-        matrix = np.array([int(el) if int(el) == el else el for el in matrix.ravel()] ,dtype=object).reshape(shape)
-        matD = np.zeros((n, n),dtype=object)
-        matL = np.eye(n,dtype=object)
+        matrix = np.array([int(el) if int(el) == el else el for el in matrix.ravel()], dtype=object).reshape(shape)
+        matD = np.zeros((n, n), dtype=object)
+        matL = np.eye(n, dtype=object)
         for i in range(n):
             for j in range(i):
                 if matD[j, j] != 0:
-                    if type(matD[j, j])in [Add,Mul]:
-                        coeff = 1/matD[j, j]
+                    if type(matD[j, j]) in [Add, Mul]:
+                        coeff = 1 / matD[j, j]
                     else:
-                        coeff = Rational(1,matD[j, j])
+                        coeff = Rational(1, matD[j, j])
                     matL[i, j] = coeff * (
                         matrix[i, j] - sum([matL[i, k] * np.conjugate(matL[j, k]) * matD[k, k]
                                             for k in range(j)])
-                        )
+                    )
                 else:
-                    matL[i,j] = 0
-            matD[i,i] = matrix[i,i]-sum([matL[i,k]*np.conjugate(matL[i,k])*matD[k,k] for k in range(i)])
+                    matL[i, j] = 0
+            matD[i, i] = matrix[i, i] - sum([matL[i, k] * np.conjugate(matL[i, k]) * matD[k, k] for k in range(i)])
         # get the sqrt of the diagonal matrix:
         if np.all(matD.transpose() != matD):
             exit("Error, the matD is not diagonal cannot take the sqrt.")
         else:
             matDsqr = diag(*[sqrt(el) for el in matD.diagonal()])
-            result = (matL*matDsqr).transpose()
+            result = (matL * matDsqr).transpose()
             #  Make the resulting matrix as small as possible by eliminating null columns
-            result = np.array([np.array(result.row(i))[0] for i in range(result.rows) if result.row(i) != zeros(1, n)]).transpose()
+            result = np.array(
+                [np.array(result.row(i))[0] for i in range(result.rows) if result.row(i) != zeros(1, n)]).transpose()
         return result
 
     def _nptokey(self, array):
