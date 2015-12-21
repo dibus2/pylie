@@ -1,7 +1,10 @@
 __author__ = 'florian'
 
 """
-This is the python implementation of the Group Theory method of Susyno.
+PyLie is a python module for Lie group calculation for particle physics. In particular, it can manipulate any of the Lie
+algebra, calculate the system of roots, weights, casimir, dynkin, Matrix representation and Invariants of the product of
+several irrep.
+It is a python implementation of the Susyno group method.
 """
 
 import pudb
@@ -115,6 +118,11 @@ class LieAlgebra(object):
         self._deltaTimes2 = self.proots.sum(axis=0)
         self.adjoint = self._getAdjoint()
         self.longestWeylWord = self._longestWeylWord()
+        # store the matrices for speeding up multiple calls
+        self._repMinimalMatrices = {}
+        self._repMatrices = {}
+        self._dominantWeightsStore = {}
+        self._invariantsStore = {}
 
     def _matrixD(self):
         """
@@ -253,8 +261,11 @@ class LieAlgebra(object):
         """
         Generate the dominant weights without dimentionality information
         """
+        key = tuple(weight)
+        if key in self._dominantWeightsStore:
+            return self._dominantWeightsStore[key]
         # convert the weight
-        weight = np.array([weight])
+        weight = np.array([weight], dtype=int)
         listw = [weight]
         counter = 1
         while counter <= len(listw):
@@ -262,7 +273,12 @@ class LieAlgebra(object):
             aux = [el for el in aux if np.all(el == abs(el))]
             listw = listw + aux
             # remove duplicates this is actually a pain since numpy are not hashable
-            listw = {array.tostring(): array for array in listw}.values()
+            tp = []
+            listw = [self._nptokey(el) for el in listw]
+            for el in listw:
+                if not (el) in tp:
+                    tp.append(el)
+            listw = [np.array([el], dtype=int) for el in tp]
             counter += 1
         # need to sort listw
         def sortList(a, b):
@@ -281,7 +297,7 @@ class LieAlgebra(object):
                                    tuple(self._dominantConjugate(k * self.proots[i - 1] + listw[j - 1])[0]))
                 key = self._nptokey(listw[j - 1])
                 while aux1 != 0:
-                    aux2 = k * (self.proots[i - 1] + listw[j - 1])
+                    aux2 = k * self.proots[i - 1] + listw[j - 1]
                     if key in functionaux:
                         functionaux[key] += 2 * aux1 * self._simpleProduct(aux2, [self.proots[i - 1]], self._cmID)
                     else:
@@ -296,6 +312,7 @@ class LieAlgebra(object):
             functionaux[key] /= self._simpleProduct(listw[0] + listw[j - 1] + self._deltaTimes2,
                                                     listw[0] - listw[j - 1], self._cmID)
             result.append([listw[j - 1], self._indic(functionaux, self._nptokey(listw[j - 1]))])
+        self._dominantWeightsStore[key] = result
         return result
 
     def casimir(self, irrep):
@@ -430,11 +447,12 @@ class LieAlgebra(object):
         """
         if (cmp(list(weights), list(self.conjugateIrrep(weights))) in [-1, 0]) and np.all(
                         (self.conjugateIrrep(weights)) != weights):
-            return [np.array([-1, 1],dtype=int) * el for el in self._weights(self.conjugateIrrep(weights))]
+            return [np.array([-1, 1], dtype=int) * el for el in self._weights(self.conjugateIrrep(weights))]
         else:
             dw = self._dominantWeights(weights)
-            result = sum([[[np.array(el,dtype=int), dw[ii][1]] for el in self._weylOrbit(self._tolist(dw[ii][0][0]))] for ii in
-                          range(len(dw))], [])
+            result = sum(
+                [[[np.array(el, dtype=int), dw[ii][1]] for el in self._weylOrbit(self._tolist(dw[ii][0][0]))] for ii in
+                 range(len(dw))], [])
 
             def sortList(a, b):
                 tp1 = list(np.dot(-(a[0] - b[0]), self.ncminv).ravel())
@@ -457,11 +475,19 @@ class LieAlgebra(object):
         4) Also, unlike RepMatrices, the matrices given by this function are not Hermitian and therefore they do not conform with the usual requirements of model building in particle physics.
             However, for some applications, they might be all that is needed.
         """
+        # check whether it s not been calculated already
+        if type(maxW) == np.ndarray:
+            tag = self._nptokey(maxW)
+        else:
+            tag = tuple(maxW)
+        if tag in self._repMinimalMatrices:
+            return self._repMinimalMatrices[tag]
+
         # auxiliary function for the repMatrices method base on the Chevalley-Serre relations
         cmaxW = self.conjugateIrrep(self._tolist(maxW))
         if cmp(self._tolist(maxW), self._tolist(cmaxW)) in [-1, 0] and not (np.all(cmaxW == maxW)):
             return [[-1 * el[1], -1 * el[0], -1 * el[2]] for el in
-                    self.repMinimalMatrices(cmaxW)]  # TODO selection of the returned array [All,2,1,3]
+                    self.repMinimalMatrices(cmaxW)]
         else:
             listw = self._weights(self._tolist(maxW))
             up, dim, down = {}, {}, {}
@@ -517,12 +543,18 @@ class LieAlgebra(object):
                             matrixT = col.transpose()
                         else:
                             matrixT = np.append(matrixT, col.transpose(), axis=0)
-                matrix = matrixT.transpose()
+                if matrixT == [[]]:
+                    matrix = np.zeros((1, 1), dtype=object)
+                else:
+                    matrix = matrixT.transpose()
                 aux1 = sum([self._indic(dim, self._nptokey(listw[element][0] + self.ncm[i])) for i in range(self._n)])
                 aux2 = self._indic(dim, self._nptokey(listw[element][0]))
                 cho = self._decompositionTypeCholesky(matrix)
-                aux3 = np.pad(cho, pad_width=((0, max(aux1 - cho.shape[0], 0)), (0, max(aux2 - cho.shape[1], 0))),
-                              mode='constant')
+                if cho.shape == (0,):
+                    aux3 = np.array([[0]])
+                else:
+                    aux3 = np.pad(cho, pad_width=((0, max(aux1 - cho.shape[0], 0)), (0, max(aux2 - cho.shape[1], 0))),
+                                  mode='constant')
                 aux4 = aux3.transpose()
                 if np.all((np.dot(aux3, aux4)) != matrix):
                     print("Error in repminimal matrices:", aux3, " ", aux4, " ", matrix)
@@ -576,15 +608,179 @@ class LieAlgebra(object):
                 matrixF.append(SparseMatrix(aux7))  # sparse matrix transfo
                 matrixH.append(SparseMatrix(aux8))  # sparse matrix transfo
             aux1 = [[matrixE[i], matrixF[i], matrixH[i]] for i in range(self._n)]
+            self._repMinimalMatrices[tag] = aux1
             return aux1
+
+    def invariants(self, reps, conj=[]):
+        """
+        Calculates the linear combinations of the components of rep1 x rep2 x ... which are invariant under the action of the group.
+        These are also known as the Clebsch-Gordon coefficients.
+        The invariants/Clebsch-Gordon coefficients returned by this function follow the following general normalization convention.
+        Writing each invariant as Sum_i,j,...c^ij... rep1[i] x rep2[j] x ..., then the normalization convention is  Sum_i,j,...|c_ij...|^2=Sqrt[dim(rep1)dim(rep2)...]. Here, i,j, ... are the components of each representation.
+        conj represents wether or not the irrep should be conjugated.
+        """
+        key = tuple([tuple(el) for el in reps])
+        if key in self._invariantsStore:
+            return self._invariantsStore[key]
+        if conj != []:
+            assert len(conj) == len(reps), "Length `conj` should match length `reps`!"
+            assert np.all([type(el) == bool for el in conj]), "`conj` should only contains boolean!"
+        if len(reps) == 2:
+            invs = self._invariants2Irrep(reps, conj)
+        elif len(reps) == 3:
+            invs = self._invariants3Irrep(reps, conj)
+        elif len(reps) == 4:
+            invs = self._invariants4Irrep(reps, conj)
+        else:
+            exit("Error, only 2, 3 or 4 irrep should be passed.")
+        self._invariantsStore[key] = invs
+        return invs
+
+    def _invariants2Irrep(self, reps, conj):
+        """
+        return the invariants of the the irreps
+        """
+        cjs = not (conj[0] == conj[1])
+        # the irreps are first sorted actually
+        reps = sorted([tuple(el) for el in reps])
+        w1, w2 = self._weights(reps[0]), self._weights(reps[1])
+        reps = [np.array([el]) for el in reps if type(el) != np.array]
+        # Warning, because the results are stored they need to be copied otherwise modifying one modifies the other one
+        r1, r2 = cp.deepcopy(self.repMinimalMatrices(reps[0])), cp.deepcopy(self.repMinimalMatrices(reps[1]))
+        if cjs:
+            for i in range(len(w2)):
+                w2[i][0] = - w2[i][0]
+            for i in range(self._n):
+                for j in range(3):
+                    r2[i][j] = - r2[i][j].transpose()
+
+        array1, array2 = {}, {}
+        for i in range(len(w1)):
+            array1[self._nptokey(w1[i][0])] = w1[i][1]
+        for i in range(len(w2)):
+            array2[self._nptokey(w2[i][0])] = w2[i][1]
+        aux1 = []
+        for i in range(len(w1)):
+            if self._indic(array2, self._nptokey(-w1[i][0])) != 0:
+                aux1.append([w1[i][0], -w1[i][0]])
+        dim1 = [0]
+        for i in range(1, len(aux1) + 1):  # WARNING dim1 is aligned with mathematica
+            dim1.append(dim1[i - 1] + self._indic(array1, self._nptokey(aux1[i - 1][0])) * self._indic(array2,
+                                                                                                       self._nptokey(
+                                                                                                           aux1[i - 1][
+                                                                                                               1])))
+        b1, e1 = {}, {}
+        for i in range(len(aux1)):
+            key = tuple([self._nptokey(el) for el in aux1[i]])
+            b1[key] = dim1[i] + 1
+            e1[key] = dim1[i + 1]
+        bigMatrix = []
+        for i in range(self._n):
+            aux2 = []
+            keysaux2 = []
+            for j in range(len(aux1)):
+                if self._indic(array1, self._nptokey(aux1[j][0] + self.ncm[i])) != 0:
+                    val = [aux1[j][0] + self.ncm[i], aux1[j][1]]
+                    key = tuple([self._nptokey(el) for el in val])
+                    if not (key in keysaux2):
+                        aux2.append(val)
+                        keysaux2.append(key)
+                if self._indic(array2, self._nptokey(aux1[j][1] + self.ncm[i])) != 0:
+                    val = [aux1[j][0], aux1[j][1] + self.ncm[i]]
+                    key = tuple([self._nptokey(el) for el in val])
+                    if not (key in keysaux2):
+                        aux2.append(val)
+                        keysaux2.append(key)
+
+            if len(w1) == 1 and len(w2) == 1:  # Special care is needed if both reps are singlets
+                aux2 = aux1
+            dim2 = [0]
+            for k in range(1, len(aux2) + 1):
+                dim2.append(dim2[k - 1] + self._indic(array1, self._nptokey(aux2[k - 1][0])) * self._indic(array2,
+                                                                                                           self._nptokey(
+                                                                                                               aux2[
+                                                                                                                   k - 1][
+                                                                                                                   1])))
+            b2, e2 = {}, {}
+            for k in range(len(aux2)):
+                key = tuple([self._nptokey(el) for el in aux2[k]])
+                b2[key] = dim2[k] + 1
+                e2[key] = dim2[k + 1]
+            if dim2[len(aux2)] != 0 and dim1[len(aux1)] != 0:
+                matrixE = SparseMatrix(zeros(dim2[len(aux2)], dim1[len(aux1)]))
+            else:
+                matrixE = []
+            for j in range(len(aux1)):
+                if self._indic(array1, self._nptokey(aux1[j][0] + self.ncm[i])) != 0:
+                    aux3 = aux1[j]
+                    aux4 = [aux1[j][0] + self.ncm[i], aux1[j][1]]
+                    kaux4 = tuple([self._nptokey(el) for el in aux4])
+                    kaux3 = tuple([self._nptokey(el) for el in aux3])
+                    matrixE[self._indic(b2, kaux4) - 1:self._indic(e2, kaux4),
+                    self._indic(b1, kaux3) - 1:self._indic(e1, kaux3)] = np.kron(
+                        self._blockW(aux1[j][0] + self.ncm[i], aux1[j][0], w1, r1[i][0]),
+                        np.eye(self._indic(array2, self._nptokey(aux1[j][1])), dtype=object))
+                if self._indic(array2, self._nptokey(aux1[j][1] + self.ncm[i])) != 0:
+                    aux3 = aux1[j]
+                    aux4 = [aux1[j][0], aux1[j][1] + self.ncm[i]]
+                    kaux4 = tuple([self._nptokey(el) for el in aux4])
+                    kaux3 = tuple([self._nptokey(el) for el in aux3])
+                    matrixE[self._indic(b2, kaux4) - 1:self._indic(e2, kaux4),
+                    self._indic(b1, kaux3) - 1:self._indic(e1, kaux3)] = np.kron(
+                        np.eye(self._indic(array1, self._nptokey(aux1[j][0])), dtype=object),
+                        self._blockW(aux1[j][1] + self.ncm[i], aux1[j][1], w2, r2[i][0]))
+            if bigMatrix == [] and matrixE != []:
+                bigMatrix = SparseMatrix(matrixE)
+
+            elif bigMatrix != [] and matrixE != []:
+                bigMatrix = bigMatrix.col_join(matrixE)
+        dim1 = [0]
+        dim2 = [0]
+        for i in range(1, len(w1) + 1):
+            dim1.append(dim1[i - 1] + w1[i - 1][1])
+        for i in range(1, len(w2) + 1):
+            dim2.append(dim2[i - 1] + w2[i - 1][1])
+        for i in range(len(w1)):
+            b1[self._nptokey(w1[i][0])] = dim1[i]
+        for i in range(len(w2)):
+            b2[self._nptokey(w2[i][0])] = dim2[i]
+        result = []
+        if len(bigMatrix) != 0:
+            dt = 100 if len(bigMatrix) < 10000 else 500
+            aux4 = self._findNullSpace(bigMatrix, dt)
+            # let's construct the invariant combination from the null space solution
+            # declare the symbols for the output of the invariants
+            a, b = map(IndexedBase, ['a', 'b'])
+            expr = []
+            for i0 in range(len(aux4)):
+                expr.append(0)
+                cont = 0
+                for i in range(len(aux1)):
+                    for j1 in range(self._indic(array1, self._nptokey(aux1[i][0]))):
+                        for j2 in range(self._indic(array2, self._nptokey(aux1[i][1]))):
+                            cont += 1
+                            expr[i0] += aux4[0][cont - 1] * a[1 + b1[self._nptokey(aux1[i][0])] + j1] * b[
+                                1 + b2[self._nptokey(aux1[i][1])] + j2]
+            result = [expr[ii] for ii in range(len(aux4))]
+        # Special treatment - This code ensures that well known cases come out in the expected form
+        if self.cartan._name == "A" and self.cartan._id == 1 and reps[0] == reps[1] and reps[0] == [1] and not (cjs):
+            # Todo check that this is needed here as well
+            result = [-el for el in result]
+        return result
 
     def repMatrices(self, maxW):
         """
         This method returns the complete set of matrices that make up a representation, with the correct casimir and trace normalizations
-        1) The matrices {Subscript[M, i]} given by this method are in conformity with the usual requirements in particle physics: \!\(
+        1) The matrices {M_i} given by this method are in conformity with the usual requirements in particle physics: \!\(
             M_a^\Dagger = M_a ; Tr(M_a M_b = S(rep) \Delta_ab; Sum_a M_a M_a = C(rep) 1.
         """
-
+        # check if its been calculated already
+        if type(maxW) == np.array:
+            tag = self._nptokey(maxW)
+        else:
+            tag = tuple(maxW)
+        if tag in self._repMatrices:
+            return self._repMatrices[tag]
         # Let's gather the minimal rep matrices
         if type(maxW) == list:
             maxW = np.array([maxW])
@@ -599,14 +795,13 @@ class LieAlgebra(object):
         listE, listF, listH = [el[0] for el in rep], [el[1] for el in rep], [el[2] for el in rep]
         # If it's not the trivial rep, generate the matrices of the remaining algebra elements.
         #  The positive roots of the algebra serve as a guide in this process of doing comutators
-        pudb.set_trace()
         for i in range(self._n, len(self.proots)):
             j = 0
             aux = []
             while aux == []:
                 aux = [iel for iel, el in enumerate(self.proots[:i]) if np.all(el == self.proots[i] - self.proots[j])]
                 if aux == []:
-                    j+=1
+                    j += 1
             listE.append(listE[aux[0]].multiply(listE[j]).add(-listE[j].multiply(listE[aux[0]])))
             listF.append(listF[aux[0]].multiply(listF[j]).add(- listF[j].multiply(listF[aux[0]])))
         for i in range(len(listE)):
@@ -615,16 +810,16 @@ class LieAlgebra(object):
             listE[i] = listE[i].add(listF[i])
             listF[i] = aux.add(-listF[i])
             # Control the normalization of the Tx,Ty matrices with the trace condition
-            listE[i] = SparseMatrix(listE[i]*sqrt(sR)/sqrt((listE[i].multiply(listE[i])).trace()))
-            listF[i] = SparseMatrix(listF[i]*sqrt(sR)/sqrt((listF[i].multiply(listF[i])).trace()))
-        matrixCholesky = np.dot(self.ncminv,self._matD)  #  See the casimir expression in a book on lie algebras
+            listE[i] = SparseMatrix(listE[i] * sqrt(sR) / sqrt((listE[i].multiply(listE[i])).trace()))
+            listF[i] = SparseMatrix(listF[i] * sqrt(sR) / sqrt((listF[i].multiply(listF[i])).trace()))
+        matrixCholesky = np.dot(self.ncminv, self._matD)  # See the casimir expression in a book on lie algebras
         aux = (SparseMatrix(matrixCholesky).cholesky()).transpose()  # get the actual cholesky decomposition from sympy
-        listH = [reduce(operator.add,[listH[j]*aux[i, j] for j in range(self._n)]) for i in range(self._n)]
+        listH = [reduce(operator.add, [listH[j] * aux[i, j] for j in range(self._n)]) for i in range(self._n)]
         # Up to multiplicative factors, Tz are now correct. We fix again the normalization with the trace condition
-        listH = [listH[i]*(sqrt(sR)/sqrt((listH[i].multiply(listH[i])).trace())) for i in range(self._n)]
-        listTotal = [listE,listF,listH]
+        listH = [listH[i] * (sqrt(sR) / sqrt((listH[i].multiply(listH[i])).trace())) for i in range(self._n)]
+        listTotal = [listE, listF, listH]
+        self._repMatrices[tag] = listTotal
         return listTotal
-
 
     def _decompositionTypeCholesky(self, matrix):
         """
@@ -671,3 +866,99 @@ class LieAlgebra(object):
             return dict[key]
         else:
             return 0
+
+    def _blockW(self, w1, w2, listW, repMat):
+        """
+        aux function to construct the invariants
+        """
+        dim = [0]
+        for i in range(1, len(listW) + 1):
+            dim.append(dim[i - 1] + listW[i - 1][1])
+        b, e = {}, {}
+        for i in range(len(listW)):
+            key = self._nptokey(listW[i][0])
+            b[key] = dim[i] + 1
+            e[key] = dim[i + 1]
+        aux1 = repMat[b[self._nptokey(w1)] - 1:e[self._nptokey(w1)], b[self._nptokey(w2)] - 1:e[self._nptokey(w2)]]
+        return aux1
+
+    def _findNullSpace(self, matrixIn, dt):
+        """
+        This is the aux function to determin the invariants.
+        """
+        sh = matrixIn.shape
+        matrixInlist = matrixIn.row_list()
+        aux1, gather = [], {}
+        for iel, el in enumerate(matrixInlist):
+            if el[0] in gather:
+                gather[el[0]].append(el)
+            else:
+                gather[el[0]] = [el]
+        aux1 = sorted(gather.values())
+        if len(aux1) == 0:
+            return eye(len(matrixIn[0]))
+        preferredOrder = flatten(
+            [[iel for iel, el in enumerate(aux1) if len(el) == i] for i in range(1, max(map(len, aux1)) + 1)])
+        matrix = {}
+        for iel, el in enumerate(preferredOrder):
+            for ell in aux1[el]:
+                matrix[(iel, ell[1])] = ell[2]
+        matrix = SparseMatrix(iel + 1, sh[1], matrix)  # the number of columns is kept fix
+        n, n2 = matrix.shape
+        v = IndexedBase('v')
+        varnames = [v[i] for i in range(n2)]
+        var = Matrix([varnames])
+        for i in range(1, n + 1, dt):
+            #  To determine the replacement rules we need to create a system of linear equations
+            sys = matrix[i - 1:min(i + dt - 1, n), :]
+            sys = sys.col_insert(sh[1] + 1, zeros(sys.shape[0], 1))
+            res = solve_linear_system(sys, *varnames)
+            #  substitute the solution
+            var = var.subs(res)
+        # now we need to extract the vector again
+        #  declare indices for doing the matching
+        p, q = map(Wild, ['p', 'q'])
+        tally = []
+        for el in var.tolist()[0]:
+            tp = el.match(q * v[p])
+            if p in tp:
+                tally.append(tp[p])
+        tally = list(set(tally))
+        res = []
+        for el in tally:
+            for ell in tally:
+                if ell == el:
+                    tp = var.subs(v[ell], 1)
+                else:
+                    tp = var.subs(v[el], 0)
+            res.append(tp)
+        return res
+
+
+class Permutation:
+    def __init__(self):
+        pass
+
+    def hookContentFormula(self, partition, nMax):
+        """
+        1) Applies the Hook Content Formula to a semi-standard Young tableau with cells filled with the numbers 0, ...,n (repetitions are allowed) - see reference below
+        2) Recall that a partition {Lambda_1, Lambda_2, ...} is associated with a Young tableau where row i contains Lambda_i cells - for example the partition {4,3,1,1} of 9 yields the tableau
+        3) In a semi-standard Young tableau, the x_i which fill it must increase from top to bottom and must not decrease from left to right.
+        4) The number of semi-standard Young tableau given by the partition \[Lambda], where the cell can have any positive integer value smaller or equal to n is given by hookContentFormula(Lambda, n).
+        5)The application in model building of this is the following: consider a parameter M_f1f2, ... where the f_i =1,...,n are flavor indices. If Mu is known to have some symmetry (given by a partition Lambda) under a permutation of these indices, then the number of degrees of freedom in Mu is given by  hookContentFormula(Lambda_n) (see examples below).
+        """
+        n1 = partition[0]
+        n2 = len(partition)
+        inverseP = [len([ell for ell in partition if ell >= el]) for el in range(1, n1 + 1)]
+        if type(nMax) != Symbol:
+            aux = [[Rational((nMax + i - j), partition[j - 1] + inverseP[i - 1] - (j - 1) - (i - 1) - 1)
+                    if partition[j - 1] + inverseP[i - 1] - (j - 1) - (i - 1) - 1 > 0 else 1 for j in range(1, n2 + 1)] for
+                   i in range(1, n1 + 1)]
+        else:
+            aux = [[(nMax + i - j)/(partition[j - 1] + inverseP[i - 1] - (j - 1) - (i - 1) - 1)
+                    if partition[j - 1] + inverseP[i - 1] - (j - 1) - (i - 1) - 1 > 0 else 1 for j in range(1, n2 + 1)] for
+                   i in range(1, n1 + 1)]
+        result = reduce(operator.mul,  flatten(aux))
+        print(result)
+        return result
+
