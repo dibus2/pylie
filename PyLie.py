@@ -15,6 +15,7 @@ import numpy as np
 from sympy import *
 import copy as cp
 import operator
+import itertools
 
 
 class CartanMatrix(object):
@@ -123,6 +124,12 @@ class LieAlgebra(object):
         self._repMatrices = {}
         self._dominantWeightsStore = {}
         self._invariantsStore = {}
+        self.a, self.b, self.c, self.d = map(IndexedBase, ['a', 'b', 'c', 'd'])
+        self.e, self.f, self.g, self.h = map(IndexedBase, ['e', 'f', 'g', 'h'])
+        self._symblist = [self.a, self.b, self.c, self.d]
+        self._symbdummy = [self.e, self.f, self.g, self.h]
+        self.p, self.q = map(Wild, ['p', 'q'])
+        self.pp = Wild('pp', exclude=[IndexedBase])
 
     def _matrixD(self):
         """
@@ -445,8 +452,8 @@ class LieAlgebra(object):
         so that RepMatrices[group,ConjugateIrrep[group,w]]=-Conjugate[RepMatrices[group,w]]
         and Invariants[group,{w,ConjugateIrrep[group,w]},{False,False}]=a[1]b[1]+...+a[n]b[n]
         """
-        if (cmp(list(weights), list(self.conjugateIrrep(weights))) in [-1, 0]) and np.all(
-                        (self.conjugateIrrep(weights)) != weights):
+        if (cmp(list(weights), list(self.conjugateIrrep(weights))) in [-1, 0]) and not(np.all(
+                        (self.conjugateIrrep(weights)) == weights)):
             return [np.array([-1, 1], dtype=int) * el for el in self._weights(self.conjugateIrrep(weights))]
         else:
             dw = self._dominantWeights(weights)
@@ -625,24 +632,89 @@ class LieAlgebra(object):
         if conj != []:
             assert len(conj) == len(reps), "Length `conj` should match length `reps`!"
             assert np.all([type(el) == bool for el in conj]), "`conj` should only contains boolean!"
+        # Let's re-order the irreps
+        skey = sorted(key)
+        alreadyTaken = []
+        order = []
+        for el in skey:
+            pos = [iel for iel, elem in enumerate(key) if el == elem]
+            for ell in pos:
+                if not(ell in alreadyTaken):
+                    alreadyTaken.append(ell)
+                    order.append(ell)
+                    break
+        alreadyTaken = []
+        inverseOrder =[]
+        for el in key:
+            pos = [iel for iel, elem in enumerate(skey) if el == elem]
+            for ell in pos:
+                if not(ell in alreadyTaken):
+                    alreadyTaken.append(ell)
+                    inverseOrder.append(ell)
+                    break
+        # let's reorder the conj accordingly
+        conj = [conj[el] for el in order]
+        # replacement rules
+        subs = [(self._symbdummy[i], self._symblist[j]) for i, j in zip(range(len(self._symblist)), order)]
         if len(reps) == 2:
-            invs = self._invariants2Irrep(reps, conj)
+            cjs = not (conj[0] == conj[1])
+            invs, maxinds = self._invariants2Irrep(skey, cjs)
         elif len(reps) == 3:
-            invs = self._invariants3Irrep(reps, conj)
+            if (conj[0] and conj[1] and conj[3]) or (not (conj[0]) and not (conj[1]) and not (conj[2])):
+                invs, maxinds = self._invariants3Irrep(skey, False)
+            if (conj[0] and con[1] and not (conj[2])) or (conj[0] and not (conj[1]) and conj[2]):
+                invs, maxinds = self._invariants3Irrep(skey, True)
+            if (conj[0] and conj[1] and conj[2]) or (not (conj[0]) and conj[1] and not (conj[3])):
+                invs, maxinds = self._invariants3Irrep([skey[0], skey[2], skey[1]], True)
+                # do the substitutions c->b b->c
+                invs = [el.subs(((self.c, self.b), (self.b, self.c))) for el in invs]
+                tp = cp.deepcopy(maxinds[0])
+                maxinds[0] = cp.deepcopy(maxinds[-1])
+                maxinds[-1] = tp
+            if (not (conj[0]) and conj[1] and conj[2]) or (conj[0] and not (conj[1]) and not (conj[2])):
+                invs, maxinds = self._invariants3Irrep([skey[2], skey[1], skey[0]], True)
+                invs = [el.subs(((self.c, self.a), (self.a, self.c))) for el in invs]
+                tp = cp.deepcopy(maxinds[0])
+                maxinds[0] = cp.deepcopy(maxinds[-1])
+                maxinds[-1] = tp
         elif len(reps) == 4:
-            invs = self._invariants4Irrep(reps, conj)
+            invs, maxinds = self._invariants4Irrep(skey, conj)
         else:
             exit("Error, only 2, 3 or 4 irrep should be passed.")
+        # Let's now obtain the tensor expression of the result TODO I am actully not sure this is needed
+        #tensor = []
+        #for i, el in enumerate(maxinds):
+        #    tensor.append([(self._symblist[i][j + 1], j) for j in range(el)])
+        #tensorInd = itertools.product(*tensor)
+        #tensorExp = np.zeros([1] + maxinds, dtype=object)
+        #for iel, el in enumerate(invs):
+        #    for elem in tensorInd:
+        #        tpmatch = el.match(self.pp * reduce(operator.mul, [xelem[0] for xelem in elem]) + self.q)
+        #        if tpmatch != None:
+        #            if len(elem) == 2:
+        #                tensorExp[iel, elem[0][1], elem[1][1]] = tpmatch[self.pp]
+        #            elif len(elem) == 3:
+        #                tensorExp[iel, elem[0][1], elem[1][1], elem[2][1]] = tpmatch[self.pp]
+        #            elif len(elem) == 4:
+        #                tensorExp[iel, elem[0][1], elem[1][1], elem[2][1], elem[3][1]] = tpmatch[self.pp]
+        #            else:
+        #                exit("Error, cannot determin the tensor form for more than 4 fields contracted together")
+        ## TODO normalize the invariants
+        # tensorExp = self._normalizeInvariantsTensor([reps[i] if not(cjs[i]) else self.conjugateIrrep(reps[i]) for i in range(len(reps))], tensorExp)
+        invs = self._normalizeInvariants(reps, invs)
+        # TODO symmetrize the invariants
+        invs = self._symmetrizeInvariants(reps, invs, conj)
+        # restore the ordering of the representations which was changed above
+        subsdummy = [(self._symblist[i], self._symbdummy[i]) for i in range(len(subs))]
+        invs = [el.subs(tuple(subsdummy)) for el in invs]
+        invs = [el.subs(tuple(subs)) for el in invs]
         self._invariantsStore[key] = invs
         return invs
 
-    def _invariants2Irrep(self, reps, conj):
+    def _invariants2Irrep(self, reps, cjs):
         """
         return the invariants of the the irreps
         """
-        cjs = not (conj[0] == conj[1])
-        # the irreps are first sorted actually
-        reps = sorted([tuple(el) for el in reps])
         w1, w2 = self._weights(reps[0]), self._weights(reps[1])
         reps = [np.array([el]) for el in reps if type(el) != np.array]
         # Warning, because the results are stored they need to be copied otherwise modifying one modifies the other one
@@ -750,8 +822,8 @@ class LieAlgebra(object):
             aux4 = self._findNullSpace(bigMatrix, dt)
             # let's construct the invariant combination from the null space solution
             # declare the symbols for the output of the invariants
-            a, b = map(IndexedBase, ['a', 'b'])
             expr = []
+            aind, bind = [], []
             for i0 in range(len(aux4)):
                 expr.append(0)
                 cont = 0
@@ -759,14 +831,200 @@ class LieAlgebra(object):
                     for j1 in range(self._indic(array1, self._nptokey(aux1[i][0]))):
                         for j2 in range(self._indic(array2, self._nptokey(aux1[i][1]))):
                             cont += 1
-                            expr[i0] += aux4[0][cont - 1] * a[1 + b1[self._nptokey(aux1[i][0])] + j1] * b[
+                            aind.append(1 + b1[self._nptokey(aux1[i][0])] + j1)
+                            bind.append(1 + b2[self._nptokey(aux1[i][1])] + j2)
+                            expr[i0] += aux4[0][cont - 1] * self.a[1 + b1[self._nptokey(aux1[i][0])] + j1] * self.b[
                                 1 + b2[self._nptokey(aux1[i][1])] + j2]
             result = [expr[ii] for ii in range(len(aux4))]
         # Special treatment - This code ensures that well known cases come out in the expected form
         if self.cartan._name == "A" and self.cartan._id == 1 and reps[0] == reps[1] and reps[0] == [1] and not (cjs):
             # Todo check that this is needed here as well
             result = [-el for el in result]
-        return result
+        return result, [max(aind), max(bind)]
+
+    def _invariants3Irrep(self, reps, cjs):
+        """
+        Returns the invariant for three irreps
+        """
+        w1, w2, w3 = self._weights(reps[0]), self._weights(reps[1]), self._weights(reps[2])
+        reps = [np.array([el]) for el in reps if type(el) != np.array]
+        # Warning, because the results are stored they need to be copied otherwise modifying one modifies the other one
+        r1, r2, r3 = cp.deepcopy(self.repMinimalMatrices(reps[0])), cp.deepcopy(
+            self.repMinimalMatrices(reps[1])), cp.deepcopy(self.repMinimalMatrices(reps[2]))
+        if cjs:
+            for i in range(len(w3)):
+                w3[i][0] = - w3[i][0]
+            for i in range(self._n):
+                for j in range(3):
+                    r3[i][j] = - r3[i][j].transpose()
+
+        array1, array2, array3 = {}, {}, {}
+        for i in range(len(w1)):
+            array1[self._nptokey(w1[i][0])] = w1[i][1]
+        for i in range(len(w2)):
+            array2[self._nptokey(w2[i][0])] = w2[i][1]
+        for i in range(len(w3)):
+            array3[self._nptokey(w3[i][0])] = w3[i][1]
+        aux1 = []
+        for i in range(len(w1)):
+            for j in range(len(w2)):
+                if self._indic(array3, self._nptokey(-w1[i][0] - w2[j][0])) != 0:
+                    aux1.append([w1[i][0], w2[j][0], -w1[i][0] - w2[j][0]])
+        dim1 = [0]
+        for i in range(1, len(aux1) + 1):  # WARNING dim1 is aligned with mathematica
+            dim1.append(dim1[i - 1] + self._indic(array1, self._nptokey(aux1[i - 1][0])) * (
+                self._indic(array2, self._nptokey(aux1[i - 1][1])) * self._indic(array3, self._nptokey(aux1[i - 1][2]))
+            ))
+        b1, e1 = {}, {}
+        b3 = {}
+        for i in range(len(aux1)):
+            key = tuple([self._nptokey(el) for el in aux1[i]])
+            b1[key] = dim1[i] + 1
+            e1[key] = dim1[i + 1]
+        bigMatrix = []
+        for i in range(self._n):
+            aux2 = []
+            keysaux2 = []
+            for j in range(len(aux1)):
+                if self._indic(array1, self._nptokey(aux1[j][0] + self.ncm[i])) != 0:
+                    val = [aux1[j][0] + self.ncm[i], aux1[j][1], aux1[j][2]]
+                    key = tuple([self._nptokey(el) for el in val])
+                    if not (key in keysaux2):
+                        aux2.append(val)
+                        keysaux2.append(key)
+                if self._indic(array2, self._nptokey(aux1[j][1] + self.ncm[i])) != 0:
+                    val = [aux1[j][0], aux1[j][1] + self.ncm[i], aux1[j][2]]
+                    key = tuple([self._nptokey(el) for el in val])
+                    if not (key in keysaux2):
+                        aux2.append(val)
+                        keysaux2.append(key)
+                if self._indic(array3, self._nptokey(aux1[j][2] + self.ncm[i])) != 0:
+                    val = [aux1[j][0], aux1[j][1], aux1[j][2] + self.ncm[i]]
+                    key = tuple([self._nptokey(el) for el in val])
+                    if not (key in keysaux2):
+                        aux2.append(val)
+                        keysaux2.append(key)
+            if len(w1) == 1 and len(w2) == 1 and len(w3) == 1:  # Special care is needed if both reps are singlets
+                aux2 = aux1
+            dim2 = [0]
+            for k in range(1, len(aux2) + 1):
+                dim2.append(dim2[k - 1] + self._indic(array1, self._nptokey(aux2[k - 1][0])) * self._indic(array2,
+                                                                                                           self._nptokey(
+                                                                                                               aux2[
+                                                                                                                   k - 1][
+                                                                                                                   1])) * self._indic(
+                    array3, self._nptokey(aux2[k - 1][2])))
+            b2, e2 = {}, {}
+            for k in range(len(aux2)):
+                key = tuple([self._nptokey(el) for el in aux2[k]])
+                b2[key] = dim2[k] + 1
+                e2[key] = dim2[k + 1]
+            if dim2[len(aux2)] != 0 and dim1[len(aux1)] != 0:
+                matrixE = SparseMatrix(zeros(dim2[len(aux2)], dim1[len(aux1)]))
+            else:
+                matrixE = []
+            for j in range(len(aux1)):
+                if self._indic(array1, self._nptokey(aux1[j][0] + self.ncm[i])) != 0:
+                    aux3 = aux1[j]
+                    aux4 = [aux1[j][0] + self.ncm[i], aux1[j][1], aux1[j][2]]
+                    kaux4 = tuple([self._nptokey(el) for el in aux4])
+                    kaux3 = tuple([self._nptokey(el) for el in aux3])
+                    matrixE[self._indic(b2, kaux4) - 1:self._indic(e2, kaux4),
+                    self._indic(b1, kaux3) - 1:self._indic(e1, kaux3)] = np.kron(np.kron(
+                        self._blockW(aux1[j][0] + self.ncm[i], aux1[j][0], w1, r1[i][0]),
+                        np.eye(self._indic(array2, self._nptokey(aux1[j][1])), dtype=object)),
+                        np.eye(self._indic(array3, self._nptokey(aux1[j][2])), dtype=object))
+                if self._indic(array2, self._nptokey(aux1[j][1] + self.ncm[i])) != 0:
+                    aux3 = aux1[j]
+                    aux4 = [aux1[j][0], aux1[j][1] + self.ncm[i], aux1[j][2]]
+                    kaux4 = tuple([self._nptokey(el) for el in aux4])
+                    kaux3 = tuple([self._nptokey(el) for el in aux3])
+                    matrixE[self._indic(b2, kaux4) - 1:self._indic(e2, kaux4),
+                    self._indic(b1, kaux3) - 1:self._indic(e1, kaux3)] = np.kron(np.kron(
+                        np.eye(self._indic(array1, self._nptokey(aux1[j][0])), dtype=object),
+                        self._blockW(aux1[j][1] + self.ncm[i], aux1[j][1], w2, r2[i][0])),
+                        np.eye(self._indic(array3, self._nptokey(aux1[j][2])), dtype=object))
+                if self._indic(array3, self._nptokey(aux1[j][2] + self.ncm[i])) != 0:
+                    aux3 = aux1[j]
+                    aux4 = [aux1[j][0], aux1[j][1], aux1[j][2] + self.ncm[i]]
+                    kaux4 = tuple([self._nptokey(el) for el in aux4])
+                    kaux3 = tuple([self._nptokey(el) for el in aux3])
+                    matrixE[self._indic(b2, kaux4) - 1:self._indic(e2, kaux4),
+                    self._indic(b1, kaux3) - 1:self._indic(e1, kaux3)] = np.kron(np.kron(
+                        np.eye(self._indic(array1, self._nptokey(aux1[j][0])), dtype=object),
+                        np.eye(self._indic(array2, self._nptokey(aux1[j][1])), dtype=object)),
+                        self._blockW(aux1[j][2] + self.ncm[i], aux1[j][2], w3, r3[i][0]))
+
+            if bigMatrix == [] and matrixE != []:
+                bigMatrix = SparseMatrix(matrixE)
+            elif bigMatrix != [] and matrixE != []:
+                bigMatrix = bigMatrix.col_join(matrixE)
+        dim1 = [0]
+        dim2 = [0]
+        dim3 = [0]
+        for i in range(1, len(w1) + 1):
+            dim1.append(dim1[i - 1] + w1[i - 1][1])
+        for i in range(1, len(w2) + 1):
+            dim2.append(dim2[i - 1] + w2[i - 1][1])
+        for i in range(1, len(w3) + 1):
+            dim3.append(dim3[i - 1] + w3[i - 1][1])
+        for i in range(len(w1)):
+            b1[self._nptokey(w1[i][0])] = dim1[i]
+        for i in range(len(w2)):
+            b2[self._nptokey(w2[i][0])] = dim2[i]
+        for i in range(len(w3)):
+            b3[self._nptokey(w3[i][0])] = dim3[i]
+
+        result = []
+        if len(bigMatrix) != 0:
+            dt = 100 if len(bigMatrix) < 10000 else 500
+            aux4 = self._findNullSpace(bigMatrix, dt)
+            # let's construct the invariant combination from the null space solution
+            # declare the symbols for the output of the invariants
+            expr = []
+            aind, bind, cind = [], [], []
+            for i0 in range(len(aux4)):
+                expr.append(0)
+                cont = 0
+                for i in range(len(aux1)):
+                    for j1 in range(self._indic(array1, self._nptokey(aux1[i][0]))):
+                        aux2 = 0
+                        for j2 in range(self._indic(array2, self._nptokey(aux1[i][1]))):
+                            for j3 in range(self._indic(array3, self._nptokey(aux1[i][2]))):
+                                cont += 1
+                                aind.append(1 + b1[self._nptokey(aux1[i][0])] + j1)
+                                bind.append(1 + b2[self._nptokey(aux1[i][1])] + j2)
+                                cind.append(1 + b3[self._nptokey(aux1[i][2])] + j3)
+                                aux2 += aux4[i0][cont - 1] * self.a[1 + b1[self._nptokey(aux1[i][0])] + j1] * self.b[
+                                    1 + b2[self._nptokey(aux1[i][1])] + j2] * self.c[
+                                            1 + b3[self._nptokey(aux1[i][2])] + j3]
+                        expr[i0] += aux2
+            result = [expr[ii] for ii in range(len(aux4))]
+        return result, [max(aind), max(bind), max(cind)]
+
+    def _symmetrizeInvariants(self, reps, invs, cjs):
+        #  TODO
+        return invs
+
+    def _normalizeInvariants(self, representations, invs):
+        """
+         returns the invariants normalized to Sum |c_ij|^2 = Sqrt(dim(irrep1)dim(irrep2)...dim(irrepn))
+        """
+        # Sqrt(Prod(dim(irrep[i])),{i,1,n})
+        repDims = sqrt(reduce(operator.mul, [self.dimR(el) for el in representations], 1))
+        for iel, el in enumerate(invs):
+            norm = sum([ell.replace(self.a[self.q], 1).replace(self.b[self.q], 1).replace(self.c[self.q], 1).replace(
+                self.d[self.q], 1)**2 for ell in el.args])
+            invs[iel] = (el / sqrt(norm) * sqrt(repDims)).expand()
+
+        return invs
+
+    def _normalizeInvariantsTensor(self, representations, invariantsTensors):
+        """
+        normalize the invariants according to TODO
+        """
+
+        return invariantsTensors
 
     def repMatrices(self, maxW):
         """
@@ -886,6 +1144,7 @@ class LieAlgebra(object):
         """
         This is the aux function to determin the invariants.
         """
+        #TODO for some reason when we split in several bits res we find two vectors instead of one that need to be summed up...
         sh = matrixIn.shape
         matrixInlist = matrixIn.row_list()
         aux1, gather = [], {}
@@ -908,29 +1167,28 @@ class LieAlgebra(object):
         v = IndexedBase('v')
         varnames = [v[i] for i in range(n2)]
         var = Matrix([varnames])
+        varSol = Matrix([varnames])
         for i in range(1, n + 1, dt):
             #  To determine the replacement rules we need to create a system of linear equations
-            sys = matrix[i - 1:min(i + dt - 1, n), :]
+            sys = matrix[i - 1:min(i + dt, n), :]
             sys = sys.col_insert(sh[1] + 1, zeros(sys.shape[0], 1))
-            res = solve_linear_system(sys, *varnames)
+            res = solve_linear_system(sys, *varSol.tolist()[0])
             #  substitute the solution
-            var = var.subs(res)
+            varSol = varSol.subs(res)
         # now we need to extract the vector again
-        #  declare indices for doing the matching
-        p, q = map(Wild, ['p', 'q'])
         tally = []
-        for el in var.tolist()[0]:
-            tp = el.match(q * v[p])
-            if p in tp:
-                tally.append(tp[p])
-        tally = list(set(tally))
+        for el in varSol.tolist()[0]:
+            tp = [ell.indices[0] for ell in list(el.find(v[self.p]))]
+            tally.append(tp)
+        tally = list(set(flatten(tally)))
         res = []
         for el in tally:
+            tp = cp.deepcopy(varSol)
             for ell in tally:
                 if ell == el:
-                    tp = var.subs(v[ell], 1)
+                    tp = tp.subs(v[ell], 1)
                 else:
-                    tp = var.subs(v[el], 0)
+                    tp = tp.subs(v[ell], 0)
             res.append(tp)
         return res
 
@@ -952,13 +1210,13 @@ class Permutation:
         inverseP = [len([ell for ell in partition if ell >= el]) for el in range(1, n1 + 1)]
         if type(nMax) != Symbol:
             aux = [[Rational((nMax + i - j), partition[j - 1] + inverseP[i - 1] - (j - 1) - (i - 1) - 1)
-                    if partition[j - 1] + inverseP[i - 1] - (j - 1) - (i - 1) - 1 > 0 else 1 for j in range(1, n2 + 1)] for
+                    if partition[j - 1] + inverseP[i - 1] - (j - 1) - (i - 1) - 1 > 0 else 1 for j in range(1, n2 + 1)]
+                   for
                    i in range(1, n1 + 1)]
         else:
-            aux = [[(nMax + i - j)/(partition[j - 1] + inverseP[i - 1] - (j - 1) - (i - 1) - 1)
-                    if partition[j - 1] + inverseP[i - 1] - (j - 1) - (i - 1) - 1 > 0 else 1 for j in range(1, n2 + 1)] for
+            aux = [[(nMax + i - j) / (partition[j - 1] + inverseP[i - 1] - (j - 1) - (i - 1) - 1)
+                    if partition[j - 1] + inverseP[i - 1] - (j - 1) - (i - 1) - 1 > 0 else 1 for j in range(1, n2 + 1)]
+                   for
                    i in range(1, n1 + 1)]
-        result = reduce(operator.mul,  flatten(aux))
-        print(result)
+        result = reduce(operator.mul, flatten(aux))
         return result
-
