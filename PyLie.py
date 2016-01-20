@@ -13,6 +13,7 @@ import sys
 sys.path.insert(0, '/Applications/HEPtools/sympy-0.7.6')
 import numpy as np
 from sympy import *
+init_printing(use_latex=True)
 import copy as cp
 import operator
 import itertools
@@ -487,10 +488,12 @@ class LieAlgebra(object):
             tag = self._nptokey(maxW)
         else:
             tag = tuple(maxW)
+            maxW = np.array([maxW])
         if tag in self._repMinimalMatrices:
             return self._repMinimalMatrices[tag]
 
         # auxiliary function for the repMatrices method base on the Chevalley-Serre relations
+
         cmaxW = self.conjugateIrrep(self._tolist(maxW))
         if cmp(self._tolist(maxW), self._tolist(cmaxW)) in [-1, 0] and not (np.all(cmaxW == maxW)):
             return [[-1 * el[1], -1 * el[0], -1 * el[2]] for el in
@@ -626,12 +629,15 @@ class LieAlgebra(object):
         Writing each invariant as Sum_i,j,...c^ij... rep1[i] x rep2[j] x ..., then the normalization convention is  Sum_i,j,...|c_ij...|^2=Sqrt[dim(rep1)dim(rep2)...]. Here, i,j, ... are the components of each representation.
         conj represents wether or not the irrep should be conjugated.
         """
-        key = tuple([tuple(el) for el in reps])
-        if key in self._invariantsStore:
-            return self._invariantsStore[key]
+        storedkey = tuple([(tuple(el), el1) for el, el1 in zip(reps,conj)])
+        key = tuple([tuple(el)for el in reps])
+        if storedkey in self._invariantsStore:
+            return self._invariantsStore[storedkey]
         if conj != []:
             assert len(conj) == len(reps), "Length `conj` should match length `reps`!"
             assert np.all([type(el) == bool for el in conj]), "`conj` should only contains boolean!"
+        else:
+            conj = [False]*len(reps)
         # Let's re-order the irreps
         skey = sorted(key)
         alreadyTaken = []
@@ -662,7 +668,7 @@ class LieAlgebra(object):
         elif len(reps) == 3:
             if (conj[0] and conj[1] and conj[3]) or (not (conj[0]) and not (conj[1]) and not (conj[2])):
                 invs, maxinds = self._invariants3Irrep(skey, False)
-            if (conj[0] and con[1] and not (conj[2])) or (conj[0] and not (conj[1]) and conj[2]):
+            if (conj[0] and conj[1] and not (conj[2])) or (conj[0] and not (conj[1]) and conj[2]):
                 invs, maxinds = self._invariants3Irrep(skey, True)
             if (conj[0] and conj[1] and conj[2]) or (not (conj[0]) and conj[1] and not (conj[3])):
                 invs, maxinds = self._invariants3Irrep([skey[0], skey[2], skey[1]], True)
@@ -817,13 +823,13 @@ class LieAlgebra(object):
         for i in range(len(w2)):
             b2[self._nptokey(w2[i][0])] = dim2[i]
         result = []
+        aind, bind = [], []
         if len(bigMatrix) != 0:
             dt = 100 if len(bigMatrix) < 10000 else 500
             aux4 = self._findNullSpace(bigMatrix, dt)
             # let's construct the invariant combination from the null space solution
             # declare the symbols for the output of the invariants
             expr = []
-            aind, bind = [], []
             for i0 in range(len(aux4)):
                 expr.append(0)
                 cont = 0
@@ -840,7 +846,10 @@ class LieAlgebra(object):
         if self.cartan._name == "A" and self.cartan._id == 1 and reps[0] == reps[1] and reps[0] == [1] and not (cjs):
             # Todo check that this is needed here as well
             result = [-el for el in result]
-        return result, [max(aind), max(bind)]
+        if aind != [] and bind != []:
+            return result, [max(aind), max(bind)]
+        else:
+            return result, [0, 0]
 
     def _invariants3Irrep(self, reps, cjs):
         """
@@ -1191,6 +1200,67 @@ class LieAlgebra(object):
                     tp = tp.subs(v[ell], 0)
             res.append(tp)
         return res
+
+    def dynkinIndex(self, rep):
+        """
+        returns the dynkin index of the corresponding representation
+        """
+        return self.casimir(rep) * Rational(self.dimR(rep), self.dimR(self.adjoint))
+
+    def reduceRepProduct(self, repslist):
+        """
+        Reduces a direct product of representation to its irreducible parts
+        """
+        if len(repslist) == 1:
+            return [repslist, 1]
+        # order the list by dimension
+        orderedlist = sorted(repslist, key=lambda x: self.dimR(x))
+        n = len(orderedlist)
+        result = self._reduceRepProductBase2(orderedlist[n-2], orderedlist[n-1])
+        for i in range(2, n):
+            result = self._reduceRepProductBase1(orderedlist[n-i-1], result)
+        return result
+
+    def _reduceRepProductBase1(self, rep1, listReps):
+        res = sum([[(ell[0], el[1]*ell[1])for ell in self._reduceRepProductBase2(rep1, el[0])] for el in listReps], [])
+        final = []
+        togather = cp.deepcopy(res)
+        while togather != []:
+            gathering = togather.pop(0)
+            temp = [gathering[1]]
+            for iel,el in enumerate(togather):
+                if el[0] == gathering[0]:
+                    temp.append(el[1])
+            togather = [el for el in togather if el[0] != gathering[0]]
+            final.append((gathering[0], sum(temp)))
+        return final
+
+
+    def _reduceRepProductBase2(self, w1, w2):
+        l1 = self._dominantWeights(w1)
+        delta = np.ones(self._n, dtype=int)
+        dim = {}
+        allIrrep, added = [], []
+        for i in range(len(l1)):
+            wOrbit = np.array(self._weylOrbit(self._tolist(l1[i][0])))
+            for j in range(len(wOrbit)):
+                aux = self._dominantConjugate([wOrbit[j] + np.array(w2) + delta])
+                if np.all(aux[0]-1 == abs(aux[0]-1)):
+                    key = self._nptokey(aux[0]-delta)
+                    if key in dim:
+                        dim[key] += (-1)**aux[1] * l1[i][1]
+                    else:
+                        dim[key] = (-1)**aux[1] * l1[i][1]
+                    val = self._tolist(aux[0]-delta)
+                    if not(val in allIrrep):
+                        allIrrep.append(val)
+        result = [(el, self._indic(dim,tuple(el))) for el in allIrrep]
+        result = [el for el in result if el[1] != 0]
+        return result
+
+
+
+
 
 
 class Permutation:
