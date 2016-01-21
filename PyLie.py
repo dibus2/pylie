@@ -13,6 +13,7 @@ import sys
 sys.path.insert(0, '/Applications/HEPtools/sympy-0.7.6')
 import numpy as np
 from sympy import *
+
 init_printing(use_latex=True)
 import copy as cp
 import operator
@@ -125,10 +126,10 @@ class LieAlgebra(object):
         self._repMatrices = {}
         self._dominantWeightsStore = {}
         self._invariantsStore = {}
-        self.a, self.b, self.c, self.d = map(IndexedBase, ['a', 'b', 'c', 'd'])
-        self.e, self.f, self.g, self.h = map(IndexedBase, ['e', 'f', 'g', 'h'])
-        self._symblist = [self.a, self.b, self.c, self.d]
-        self._symbdummy = [self.e, self.f, self.g, self.h]
+        self.a, self.b, self.c, self.d, self.e = map(IndexedBase, ['a', 'b', 'c', 'd', 'e'])
+        self.f, self.g, self.h, self.i = map(IndexedBase, ['f', 'g', 'h', 'i'])
+        self._symblist = [self.a, self.b, self.c, self.d, self.e]
+        self._symbdummy = [self.f, self.g, self.h, self.i]
         self.p, self.q = map(Wild, ['p', 'q'])
         self.pp = Wild('pp', exclude=[IndexedBase])
 
@@ -269,9 +270,9 @@ class LieAlgebra(object):
         """
         Generate the dominant weights without dimentionality information
         """
-        key = tuple(weight)
-        if key in self._dominantWeightsStore:
-            return self._dominantWeightsStore[key]
+        keyStore = tuple(weight)
+        if keyStore in self._dominantWeightsStore:
+            return self._dominantWeightsStore[keyStore]
         # convert the weight
         weight = np.array([weight], dtype=int)
         listw = [weight]
@@ -320,7 +321,7 @@ class LieAlgebra(object):
             functionaux[key] /= self._simpleProduct(listw[0] + listw[j - 1] + self._deltaTimes2,
                                                     listw[0] - listw[j - 1], self._cmID)
             result.append([listw[j - 1], self._indic(functionaux, self._nptokey(listw[j - 1]))])
-        self._dominantWeightsStore[key] = result
+        self._dominantWeightsStore[keyStore] = result
         return result
 
     def casimir(self, irrep):
@@ -453,8 +454,8 @@ class LieAlgebra(object):
         so that RepMatrices[group,ConjugateIrrep[group,w]]=-Conjugate[RepMatrices[group,w]]
         and Invariants[group,{w,ConjugateIrrep[group,w]},{False,False}]=a[1]b[1]+...+a[n]b[n]
         """
-        if (cmp(list(weights), list(self.conjugateIrrep(weights))) in [-1, 0]) and not(np.all(
-                        (self.conjugateIrrep(weights)) == weights)):
+        if (cmp(list(weights), list(self.conjugateIrrep(weights))) in [-1, 0]) and not (np.all(
+                    (self.conjugateIrrep(weights)) == weights)):
             return [np.array([-1, 1], dtype=int) * el for el in self._weights(self.conjugateIrrep(weights))]
         else:
             dw = self._dominantWeights(weights)
@@ -629,15 +630,15 @@ class LieAlgebra(object):
         Writing each invariant as Sum_i,j,...c^ij... rep1[i] x rep2[j] x ..., then the normalization convention is  Sum_i,j,...|c_ij...|^2=Sqrt[dim(rep1)dim(rep2)...]. Here, i,j, ... are the components of each representation.
         conj represents wether or not the irrep should be conjugated.
         """
-        storedkey = tuple([(tuple(el), el1) for el, el1 in zip(reps,conj)])
-        key = tuple([tuple(el)for el in reps])
+        storedkey = tuple([(tuple(el), el1) for el, el1 in zip(reps, conj)])
+        key = tuple([tuple(el) for el in reps])
         if storedkey in self._invariantsStore:
             return self._invariantsStore[storedkey]
         if conj != []:
             assert len(conj) == len(reps), "Length `conj` should match length `reps`!"
             assert np.all([type(el) == bool for el in conj]), "`conj` should only contains boolean!"
         else:
-            conj = [False]*len(reps)
+            conj = [False] * len(reps)
         # Let's re-order the irreps
         skey = sorted(key)
         alreadyTaken = []
@@ -645,16 +646,16 @@ class LieAlgebra(object):
         for el in skey:
             pos = [iel for iel, elem in enumerate(key) if el == elem]
             for ell in pos:
-                if not(ell in alreadyTaken):
+                if not (ell in alreadyTaken):
                     alreadyTaken.append(ell)
                     order.append(ell)
                     break
         alreadyTaken = []
-        inverseOrder =[]
+        inverseOrder = []
         for el in key:
             pos = [iel for iel, elem in enumerate(skey) if el == elem]
             for ell in pos:
-                if not(ell in alreadyTaken):
+                if not (ell in alreadyTaken):
                     alreadyTaken.append(ell)
                     inverseOrder.append(ell)
                     break
@@ -666,34 +667,34 @@ class LieAlgebra(object):
             cjs = not (conj[0] == conj[1])
             invs, maxinds = self._invariants2Irrep(skey, cjs)
         elif len(reps) == 3:
-            if (conj[0] and conj[1] and conj[3]) or (not (conj[0]) and not (conj[1]) and not (conj[2])):
+            if (conj[0] and conj[1] and conj[2]) or (not (conj[0]) and not (conj[1]) and not (conj[2])):
                 invs, maxinds = self._invariants3Irrep(skey, False)
-            if (conj[0] and conj[1] and not (conj[2])) or (conj[0] and not (conj[1]) and conj[2]):
+            if (conj[0] and conj[1] and not (conj[2])) or (not(conj[0]) and not (conj[1]) and conj[2]):
                 invs, maxinds = self._invariants3Irrep(skey, True)
-            if (conj[0] and conj[1] and conj[2]) or (not (conj[0]) and conj[1] and not (conj[3])):
+            if (conj[0] and not(conj[1]) and conj[2]) or (not (conj[0]) and conj[1] and not (conj[2])):
                 invs, maxinds = self._invariants3Irrep([skey[0], skey[2], skey[1]], True)
                 # do the substitutions c->b b->c
-                invs = [el.subs(((self.c, self.b), (self.b, self.c))) for el in invs]
+                invs = [self._safePermutations(el, ((self.c, self.b), (self.b, self.c))) for el in invs]
                 tp = cp.deepcopy(maxinds[0])
                 maxinds[0] = cp.deepcopy(maxinds[-1])
                 maxinds[-1] = tp
             if (not (conj[0]) and conj[1] and conj[2]) or (conj[0] and not (conj[1]) and not (conj[2])):
                 invs, maxinds = self._invariants3Irrep([skey[2], skey[1], skey[0]], True)
-                invs = [el.subs(((self.c, self.a), (self.a, self.c))) for el in invs]
+                invs = [self._safePermutations(el, ((self.c, self.a), (self.a, self.c))) for el in invs]
                 tp = cp.deepcopy(maxinds[0])
                 maxinds[0] = cp.deepcopy(maxinds[-1])
                 maxinds[-1] = tp
         elif len(reps) == 4:
-            invs, maxinds = self._invariants4Irrep(skey, conj)
+            invs, maxinds = self._invariants4Irrep([], skey, conj)
         else:
             exit("Error, only 2, 3 or 4 irrep should be passed.")
         # Let's now obtain the tensor expression of the result TODO I am actully not sure this is needed
-        #tensor = []
-        #for i, el in enumerate(maxinds):
+        # tensor = []
+        # for i, el in enumerate(maxinds):
         #    tensor.append([(self._symblist[i][j + 1], j) for j in range(el)])
-        #tensorInd = itertools.product(*tensor)
-        #tensorExp = np.zeros([1] + maxinds, dtype=object)
-        #for iel, el in enumerate(invs):
+        # tensorInd = itertools.product(*tensor)
+        # tensorExp = np.zeros([1] + maxinds, dtype=object)
+        # for iel, el in enumerate(invs):
         #    for elem in tensorInd:
         #        tpmatch = el.match(self.pp * reduce(operator.mul, [xelem[0] for xelem in elem]) + self.q)
         #        if tpmatch != None:
@@ -1011,6 +1012,93 @@ class LieAlgebra(object):
             result = [expr[ii] for ii in range(len(aux4))]
         return result, [max(aind), max(bind), max(cind)]
 
+    def _invariants4Irrep(self, otherStuff, reps, cjs):
+        """
+        Returns the invariants for four irreps
+        """
+        result = []
+        if len(reps) == 3:
+            aux1 = self.invariants(reps, cjs)
+            subs = tuple([(self.a, self._symblist[len(otherStuff)]),
+                          (self.b, self._symblist[1+len(otherStuff)]),
+                          (self.c, self._symblist[2+len(otherStuff)]),
+                          (self.d, self._symblist[3+len(otherStuff)]),
+                          ])
+            # do the permutations
+            aux1 = [self._safePermutations(el, subs) for el in aux1]
+            aux2 = otherStuff[0]
+            for i in range(2, len(otherStuff)+1):
+                # TODO this has to be tested
+                pudb.set_trace()
+                aux2 = sum(otherStuff[i-1].subs(aux2), [])
+            for el in aux1:
+                el = self._safePermutations(el, tuple(aux2)).expand()
+                result.append(el)
+            return result
+
+        trueReps = [tuple(self.conjugateIrrep(el)) if cjs[iel] else el for iel,el in enumerate(reps)]
+        # find the irreps in the product of the first two representations
+        aux1 = [el[0] for el in self.reduceRepProduct([trueReps[0],trueReps[1]])]
+        # conjugate them
+        aux1 = [self.conjugateIrrep(el) for el in aux1]
+        # do the same for the rest of the irreps
+        aux2 = [el[0] for el in self.reduceRepProduct([el for el in trueReps[2:]])]
+        # get the intersection and sort it by dimension
+        aux1 = sorted([list(elem) for
+                       elem in list(set([tuple(el) for el in aux1]).intersection(set([tuple(el) for el in aux2])))],
+                      key=lambda x: self.dimR(x))
+        for i in range(len(aux1)):
+            aux2 = self._irrepInProduct([reps[0], reps[1], aux1[i]], cjs=[cjs[0], cjs[1], False])
+            subs = tuple([(self.a, self._symblist[len(otherStuff)]),
+                          (self.b, self._symblist[1+len(otherStuff)]),
+                          (self.c, self._symblist[2+len(otherStuff)]),
+                          (self.d, self._symblist[3+len(otherStuff)]),
+                          ])
+            aux2 = [[self._safePermutations(ell, subs) for ell in el] for el in aux2]
+            aux3 = [self._symblist[len(otherStuff)+1][el] for el in range(1, self.dimR(aux1[i])+1)]
+            aux2 = [(el1, el2) for el1, el2 in zip(aux3, sum(aux2,[]))]
+            # warning otherstuff should not be appended in this scope
+            otherStuffcp = cp.deepcopy(otherStuff)
+            otherStuffcp.append(aux2)
+            tp1 = reps[2:]
+            tp1.insert(0, aux1[i])
+            # do some conversion type
+            tp1 = [list(el) for el in tp1]
+            tp2 = cjs[2:]
+            tp2.insert(0, True)
+            result.append(self._invariants4Irrep(otherStuffcp, tp1, tp2))
+        return flatten(result), [self.dimR(el) for el in reps]
+
+    def _irrepInProduct(self, reps, cjs=[]):
+        """
+        calculate the combination of rep1xrep2 that transform as rep3
+        """
+        if cjs == []:
+            cjs = [False]*len(reps)
+        aux = self.invariants(reps, cjs)
+        vector = reduce(lambda x, y: x.union(y), [el.find(self.c[self.p]) for el in aux])
+        vector = sorted(list(vector), key=lambda x: x.args[1])
+        aux = [[el.coeff(ell) for ell in vector] for el in aux]
+        return aux
+
+    def _safePermutations(self, exp, permutations):
+        """
+        Safely performs the permutations given in permutations. In sympy one needs to copy
+        all the variable into temporary ones before permuting.
+        """
+        # different equations in function of the type of transformation e.g b[1] -> f(i[j]), or b->c
+        if type(permutations[0][0]) == IndexedBase:
+            for iel, (old, new) in enumerate(permutations):
+                exp = exp.replace(old[self.p], self._symbdummy[0][iel, self.p])
+            for iel, (old, new) in enumerate(permutations):
+                exp = exp.replace(self._symbdummy[0][iel, self.p], new[self.p])
+        else:
+            for iel, (old, new) in enumerate(permutations):
+                exp = exp.replace(old, self._symbdummy[0][iel])
+            for iel, (old, new) in enumerate(permutations):
+                exp = exp.replace(self._symbdummy[0][iel], new)
+        return exp
+
     def _symmetrizeInvariants(self, reps, invs, cjs):
         #  TODO
         return invs
@@ -1023,7 +1111,7 @@ class LieAlgebra(object):
         repDims = sqrt(reduce(operator.mul, [self.dimR(el) for el in representations], 1))
         for iel, el in enumerate(invs):
             norm = sum([ell.replace(self.a[self.q], 1).replace(self.b[self.q], 1).replace(self.c[self.q], 1).replace(
-                self.d[self.q], 1)**2 for ell in el.args])
+                self.d[self.q], 1) ** 2 for ell in el.args])
             invs[iel] = (el / sqrt(norm) * sqrt(repDims)).expand()
 
         return invs
@@ -1153,7 +1241,7 @@ class LieAlgebra(object):
         """
         This is the aux function to determin the invariants.
         """
-        #TODO for some reason when we split in several bits res we find two vectors instead of one that need to be summed up...
+        # TODO for some reason when we split in several bits res we find two vectors instead of one that need to be summed up...
         sh = matrixIn.shape
         matrixInlist = matrixIn.row_list()
         aux1, gather = [], {}
@@ -1216,25 +1304,25 @@ class LieAlgebra(object):
         # order the list by dimension
         orderedlist = sorted(repslist, key=lambda x: self.dimR(x))
         n = len(orderedlist)
-        result = self._reduceRepProductBase2(orderedlist[n-2], orderedlist[n-1])
+        result = self._reduceRepProductBase2(orderedlist[n - 2], orderedlist[n - 1])
         for i in range(2, n):
-            result = self._reduceRepProductBase1(orderedlist[n-i-1], result)
+            result = self._reduceRepProductBase1(orderedlist[n - i - 1], result)
         return result
 
     def _reduceRepProductBase1(self, rep1, listReps):
-        res = sum([[(ell[0], el[1]*ell[1])for ell in self._reduceRepProductBase2(rep1, el[0])] for el in listReps], [])
+        res = sum([[(ell[0], el[1] * ell[1]) for ell in self._reduceRepProductBase2(rep1, el[0])] for el in listReps],
+                  [])
         final = []
         togather = cp.deepcopy(res)
         while togather != []:
             gathering = togather.pop(0)
             temp = [gathering[1]]
-            for iel,el in enumerate(togather):
+            for iel, el in enumerate(togather):
                 if el[0] == gathering[0]:
                     temp.append(el[1])
             togather = [el for el in togather if el[0] != gathering[0]]
             final.append((gathering[0], sum(temp)))
         return final
-
 
     def _reduceRepProductBase2(self, w1, w2):
         l1 = self._dominantWeights(w1)
@@ -1245,22 +1333,18 @@ class LieAlgebra(object):
             wOrbit = np.array(self._weylOrbit(self._tolist(l1[i][0])))
             for j in range(len(wOrbit)):
                 aux = self._dominantConjugate([wOrbit[j] + np.array(w2) + delta])
-                if np.all(aux[0]-1 == abs(aux[0]-1)):
-                    key = self._nptokey(aux[0]-delta)
+                if np.all(aux[0] - 1 == abs(aux[0] - 1)):
+                    key = self._nptokey(aux[0] - delta)
                     if key in dim:
-                        dim[key] += (-1)**aux[1] * l1[i][1]
+                        dim[key] += (-1) ** aux[1] * l1[i][1]
                     else:
-                        dim[key] = (-1)**aux[1] * l1[i][1]
-                    val = self._tolist(aux[0]-delta)
-                    if not(val in allIrrep):
+                        dim[key] = (-1) ** aux[1] * l1[i][1]
+                    val = self._tolist(aux[0] - delta)
+                    if not (val in allIrrep):
                         allIrrep.append(val)
-        result = [(el, self._indic(dim,tuple(el))) for el in allIrrep]
+        result = [(el, self._indic(dim, tuple(el))) for el in allIrrep]
         result = [el for el in result if el[1] != 0]
         return result
-
-
-
-
 
 
 class Permutation:

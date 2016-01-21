@@ -1,13 +1,10 @@
 from PyLie import *
-import LieGroups as lie
 import pudb
 import time
 
 a = CartanMatrix("SU", 2)
 b = CartanMatrix("SU", 3)
 c = CartanMatrix("SU", 9)
-aold = lie.CartanMatrix("SU", 2)
-bold = lie.CartanMatrix("SU", 3)
 ALie = LieAlgebra(a)
 BLie = LieAlgebra(b)
 SU9 = LieAlgebra(c)
@@ -213,6 +210,9 @@ print("SU2:")
 
 print("Invariants of four Irreps:")
 print("SU2:")
-
-res = BLie.reduceRepProduct([[1,0],[0,1],[1,1], [2,1]])
+#res = ALie.invariants([[2],[1],[1],[2]],conj=[True, True, True, True])
+print("SU3:")
+#res = BLie.invariants([[1,1],[1,1],[1,0],[1,0]],conj=[True,False,True,False])
+res = BLie.invariants([[1,1],[1,1],[1,1]],conj=[False,False,False])
+pudb.set_trace()
 print(res)
