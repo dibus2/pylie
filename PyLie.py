@@ -669,9 +669,9 @@ class LieAlgebra(object):
         elif len(reps) == 3:
             if (conj[0] and conj[1] and conj[2]) or (not (conj[0]) and not (conj[1]) and not (conj[2])):
                 invs, maxinds = self._invariants3Irrep(skey, False)
-            if (conj[0] and conj[1] and not (conj[2])) or (not(conj[0]) and not (conj[1]) and conj[2]):
+            if (conj[0] and conj[1] and not (conj[2])) or (not (conj[0]) and not (conj[1]) and conj[2]):
                 invs, maxinds = self._invariants3Irrep(skey, True)
-            if (conj[0] and not(conj[1]) and conj[2]) or (not (conj[0]) and conj[1] and not (conj[2])):
+            if (conj[0] and not (conj[1]) and conj[2]) or (not (conj[0]) and conj[1] and not (conj[2])):
                 invs, maxinds = self._invariants3Irrep([skey[0], skey[2], skey[1]], True)
                 # do the substitutions c->b b->c
                 invs = [self._safePermutations(el, ((self.c, self.b), (self.b, self.c))) for el in invs]
@@ -1020,25 +1020,25 @@ class LieAlgebra(object):
         if len(reps) == 3:
             aux1 = self.invariants(reps, cjs)
             subs = tuple([(self.a, self._symblist[len(otherStuff)]),
-                          (self.b, self._symblist[1+len(otherStuff)]),
-                          (self.c, self._symblist[2+len(otherStuff)]),
-                          (self.d, self._symblist[3+len(otherStuff)]),
+                          (self.b, self._symblist[1 + len(otherStuff)]),
+                          (self.c, self._symblist[2 + len(otherStuff)]),
+                          (self.d, self._symblist[3 + len(otherStuff)]),
                           ])
             # do the permutations
             aux1 = [self._safePermutations(el, subs) for el in aux1]
             aux2 = otherStuff[0]
-            for i in range(2, len(otherStuff)+1):
+            for i in range(2, len(otherStuff) + 1):
                 # TODO this has to be tested
                 pudb.set_trace()
-                aux2 = sum(otherStuff[i-1].subs(aux2), [])
+                aux2 = sum(otherStuff[i - 1].subs(aux2), [])
             for el in aux1:
                 el = self._safePermutations(el, tuple(aux2)).expand()
                 result.append(el)
             return result
 
-        trueReps = [tuple(self.conjugateIrrep(el)) if cjs[iel] else el for iel,el in enumerate(reps)]
+        trueReps = [tuple(self.conjugateIrrep(el)) if cjs[iel] else el for iel, el in enumerate(reps)]
         # find the irreps in the product of the first two representations
-        aux1 = [el[0] for el in self.reduceRepProduct([trueReps[0],trueReps[1]])]
+        aux1 = [el[0] for el in self.reduceRepProduct([trueReps[0], trueReps[1]])]
         # conjugate them
         aux1 = [self.conjugateIrrep(el) for el in aux1]
         # do the same for the rest of the irreps
@@ -1050,13 +1050,13 @@ class LieAlgebra(object):
         for i in range(len(aux1)):
             aux2 = self._irrepInProduct([reps[0], reps[1], aux1[i]], cjs=[cjs[0], cjs[1], False])
             subs = tuple([(self.a, self._symblist[len(otherStuff)]),
-                          (self.b, self._symblist[1+len(otherStuff)]),
-                          (self.c, self._symblist[2+len(otherStuff)]),
-                          (self.d, self._symblist[3+len(otherStuff)]),
+                          (self.b, self._symblist[1 + len(otherStuff)]),
+                          (self.c, self._symblist[2 + len(otherStuff)]),
+                          (self.d, self._symblist[3 + len(otherStuff)]),
                           ])
             aux2 = [[self._safePermutations(ell, subs) for ell in el] for el in aux2]
-            aux3 = [self._symblist[len(otherStuff)+1][el] for el in range(1, self.dimR(aux1[i])+1)]
-            aux2 = [(el1, el2) for el1, el2 in zip(aux3, sum(aux2,[]))]
+            aux3 = [self._symblist[len(otherStuff) + 1][el] for el in range(1, self.dimR(aux1[i]) + 1)]
+            aux2 = [(el1, el2) for el1, el2 in zip(aux3, sum(aux2, []))]
             # warning otherstuff should not be appended in this scope
             otherStuffcp = cp.deepcopy(otherStuff)
             otherStuffcp.append(aux2)
@@ -1074,7 +1074,7 @@ class LieAlgebra(object):
         calculate the combination of rep1xrep2 that transform as rep3
         """
         if cjs == []:
-            cjs = [False]*len(reps)
+            cjs = [False] * len(reps)
         aux = self.invariants(reps, cjs)
         vector = reduce(lambda x, y: x.union(y), [el.find(self.c[self.p]) for el in aux])
         vector = sorted(list(vector), key=lambda x: x.args[1])
@@ -1350,6 +1350,74 @@ class LieAlgebra(object):
 class Permutation:
     def __init__(self):
         pass
+
+    def _issorted(self, llist):
+        # returns wether a list is sorted
+        return all([llist[i] <= llist[i + 1] or llist[i + 1] is None for i in xrange(len(llist) - 1)])
+
+    def checkStandardTableaux(self, tab):
+        """
+        Returns True if tab is a standard tableau i.e. it grows on each line and each columns
+        """
+        print(tab)
+        transpose = self._transposeTableaux(tab)
+        return all([self._issorted(el) for el in tab] + [self._issorted(el) for el in transpose])
+
+    def _transposeTableaux(self, tab):
+        """
+        Transpose a tableaux
+        """
+        tabcp = cp.deepcopy(tab)
+        for iel, el in enumerate(tabcp):
+            tabcp[iel] = el + [None] * (len(tabcp) - len(el))
+        tabcp = np.array(tabcp).T.tolist()
+        for iel, el in enumerate(tabcp):
+            tabcp[iel] = [ell for ell in el if ell is not None]
+        return tabcp
+
+    def generateStandardTableaux(self, Lambda):
+        """
+        Generates all the standard tableaux given by the partition LAmbda
+        """
+        result = self._generateStandardTableauxAux([[None] * el for el in Lambda])
+        return result
+
+    def _generateStandardTableauxAux(self, tab):
+        """
+        Aux function for the recursion algo
+        """
+        if not (self.checkStandardTableaux(tab)):
+            return []
+        # stop criterion for the recursion
+        # flatten tab
+        flttab = sum(tab, [])
+        # stopping creterion for the recursion
+        if not (None in flttab):
+            return [tab]
+        n = len(flttab)
+        # flatten removes Nones
+        temp = [el for el in flttab if el is not None]
+        missingNumbers = [el for el in range(1, n + 1) if not (el in temp)]
+        stop = False
+        for idi, i in enumerate(tab):
+            if stop:
+                idi -= 1
+                break
+            for idj, j in enumerate(i):
+                if j == None:
+                    stop = True
+                    break
+        if stop:
+            positionNone = [idi, idj]
+        else:
+            positionNone = []
+        result = []
+        for el in missingNumbers:
+            newT = cp.deepcopy(tab)
+            newT[positionNone[0]][positionNone[1]] = el
+            tp = self._generateStandardTableauxAux(newT)
+            result += tp
+        return result
 
     def hookContentFormula(self, partition, nMax):
         """
