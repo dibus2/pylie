@@ -1352,7 +1352,7 @@ class Sn:
     def __init__(self):
         pass
 
-    def snIrrepGenerators(self, Lambda):
+    def snIrrepGenerators(self, Lambda, orthogonalize=True):
         """
         returns the matrices that generate Sn
         """
@@ -1375,7 +1375,6 @@ class Sn:
             tabloids.append(stscp)
             stsX.append(sts_nosort)
         X, Y = np.zeros((2, len(sts), len(tabloids[0])), dtype=int), np.zeros((2, len(sts), len(tabloids[0])), dtype=int)
-        pudb.set_trace()
         for alpha in range(2):
             for i in range(len(sts)):
                 for j in range(len(tabloids[alpha])):
@@ -1393,20 +1392,34 @@ class Sn:
         # If both Pi are taken into consideration, this fixes completely B^T.B as the Pi are generators of the group in
         # an irreducible representation
         # With KroneckerProduct and NullSpace, B^T.B can be found, and B can be obtained with the CholeskyTypeDecomposition
-        Id = eye((result[0].shape[0])**2)
-        aux = [np.transpose(np.kron(np.conjugate(el), el)) for el in result]
-        #ns = Matrix(np.concatenate((aux[0]-Id, aux[1]-Id), axis=0)).nullspace()[0]
-        ns = Matrix(np.concatenate((aux[0]-Id, aux[1]-Id), axis=0))
-        v = IndexedBase('v')
-        vars = [v[i] for i in range(ns.shape[1])]
-        varm = Matrix(vars, dtype=object)
-        sys = ns.col_insert(ns.shape[1]+1, zeros(ns.shape[0], 1))
-        sol = solve_linear_system(sys, *vars)
-        pudb.set_trace()
-        BcB = self._inverseFlatten(ns, [len(result[0]), len(result[0])])
-        B = self._decompositionTypeCholesky(BcB)
-        result = [B*el*B.inverse() for el in result]
+        if orthogonalize:
+            Id = eye((result[0].shape[0])**2)
+            aux = [np.transpose(np.kron(np.conjugate(el), el)) for el in result]
+            ns = Matrix(np.concatenate((aux[0]-Id, aux[1]-Id), axis=0)).nullspace()
+            if ns != []:
+                ns = ns[0]
+            else:
+                exit("Impossible to find null space in SnGenerator.")
+            BcB = self._inverseFlatten(ns, [result[0].shape[0], result[0].shape[0]])
+            B = SparseMatrix(self._decompositionTypeCholesky(np.array(BcB))).transpose()
+            result = [B*el*B.inv() for el in result]
         return result
+
+    def _partition(self, llist, llen):
+        # partition llist into sublist of length len
+        res = []
+        llistcp = cp.deepcopy(llist)
+        while len(llistcp) >= llen:
+            print(llistcp)
+            res.append(llistcp[:llen])
+            llistcp = llistcp[llen:]
+        print(res, llist, llen)
+        return res
+
+
+    def _inverseFlatten(self, flattenedList, dims):
+        lbd = lambda x, y: self._partition(x, y)
+        return reduce(lbd, [flattenedList] + dims[::-1][:-1])
 
     def _position_in_array(self, target, elem):
         # returns the positions elem in target assume only one occurence
@@ -1455,7 +1468,6 @@ class Sn:
         Aux function for the recursion algo
         """
         if not (self.checkStandardTableaux(tab)):
-            print("exiting: ",tab)
             return []
         # stop criterion for the recursion
         # flatten tab
@@ -1467,7 +1479,6 @@ class Sn:
         # flatten removes Nones
         temp = [el for el in flttab if el is not None]
         missingNumbers = [el for el in range(1, n + 1) if not (el in temp)]
-        print(missingNumbers," ",n, flttab)
         stop = False
         for idi, i in enumerate(tab):
             if stop:
