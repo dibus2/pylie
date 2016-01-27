@@ -13,6 +13,7 @@ import sys
 sys.path.insert(0, '/Applications/HEPtools/sympy-0.7.6')
 import numpy as np
 from sympy import *
+from sympy.combinatorics import Permutation
 
 init_printing(use_latex=True)
 import copy as cp
@@ -1347,9 +1348,77 @@ class LieAlgebra(object):
         return result
 
 
-class Permutation:
+class Sn:
     def __init__(self):
         pass
+
+    def snIrrepGenerators(self, Lambda):
+        """
+        returns the matrices that generate Sn
+        """
+        n = sum(Lambda)
+        sts = self.generateStandardTableaux(Lambda)
+        basicPermutations = [Permutation(1, 2), Permutation(*range(1, n+1))]
+        # because the length of the lists on which we apply the permutations is not constant we need to resize them for each element
+        tabloids, stsX = [], []
+        for perm in basicPermutations:
+            stscp = cp.deepcopy(sts)
+            sts_nosort = cp.deepcopy(sts)
+            for iel, el in enumerate(stscp):
+                for iell, ell in enumerate(el):
+                    for ixel, xel in enumerate(ell):
+                        if xel in perm.args[0]:
+                            stscp[iel][iell][ixel] = perm(xel)
+                            sts_nosort[iel][iell][ixel] = perm(xel)
+                    stscp[iel][iell] = sorted(stscp[iel][iell])
+            # TODO IMPLEMENT THE DELETE DUPLICATES
+            tabloids.append(stscp)
+            stsX.append(sts_nosort)
+        X, Y = np.zeros((2, len(sts), len(tabloids[0])), dtype=int), np.zeros((2, len(sts), len(tabloids[0])), dtype=int)
+        pudb.set_trace()
+        for alpha in range(2):
+            for i in range(len(sts)):
+                for j in range(len(tabloids[alpha])):
+                    startingTableauxY = sts[i]
+                    startingTableauxX = stsX[alpha][i]
+                    targetTabloid = tabloids[alpha][j]
+                    tmp = [[self._position_in_array(targetTabloid, ell)[0][0] for ell in el] for el in self._transposeTableaux(startingTableauxY)]
+                    Y[alpha][i][j] = reduce(operator.mul, [0 if sorted(el) != range(len(el)) else Permutation(el).signature() for el in tmp])
+                    tmp = [[self._position_in_array(targetTabloid, ell)[0][0] for ell in el] for el in self._transposeTableaux(startingTableauxX)]
+                    X[alpha][i][j] = reduce(operator.mul, [0 if sorted(el) != range(len(el)) else Permutation(el).signature() for el in tmp])
+        result = [(SparseMatrix(X[i])*SparseMatrix(Y[i]).inv()).transpose() for i in range(2)]
+        # Finally let's orthogonalize the generators P_i
+        # Oi = B.Pi.Inverse[B], Oi are ortho and B the change of basis
+        # since Pi are real Pi^T.(B^T.B).Pi = B^T.B
+        # If both Pi are taken into consideration, this fixes completely B^T.B as the Pi are generators of the group in
+        # an irreducible representation
+        # With KroneckerProduct and NullSpace, B^T.B can be found, and B can be obtained with the CholeskyTypeDecomposition
+        Id = eye((result[0].shape[0])**2)
+        aux = [np.transpose(np.kron(np.conjugate(el), el)) for el in result]
+        #ns = Matrix(np.concatenate((aux[0]-Id, aux[1]-Id), axis=0)).nullspace()[0]
+        ns = Matrix(np.concatenate((aux[0]-Id, aux[1]-Id), axis=0))
+        v = IndexedBase('v')
+        vars = [v[i] for i in range(ns.shape[1])]
+        varm = Matrix(vars, dtype=object)
+        sys = ns.col_insert(ns.shape[1]+1, zeros(ns.shape[0], 1))
+        sol = solve_linear_system(sys, *vars)
+        pudb.set_trace()
+        BcB = self._inverseFlatten(ns, [len(result[0]), len(result[0])])
+        B = self._decompositionTypeCholesky(BcB)
+        result = [B*el*B.inverse() for el in result]
+        return result
+
+    def _position_in_array(self, target, elem):
+        # returns the positions elem in target assume only one occurence
+        pos = []
+        for iel, el in enumerate(target):
+            if elem in el:
+                pos.append([iel, el.index(elem)])
+                break
+        return pos
+
+    def _rotateleft(self, llist, n):
+        return llist[n:] + llist[:n]
 
     def _issorted(self, llist):
         # returns wether a list is sorted
@@ -1359,7 +1428,6 @@ class Permutation:
         """
         Returns True if tab is a standard tableau i.e. it grows on each line and each columns
         """
-        print(tab)
         transpose = self._transposeTableaux(tab)
         return all([self._issorted(el) for el in tab] + [self._issorted(el) for el in transpose])
 
@@ -1369,7 +1437,7 @@ class Permutation:
         """
         tabcp = cp.deepcopy(tab)
         for iel, el in enumerate(tabcp):
-            tabcp[iel] = el + [None] * (len(tabcp) - len(el))
+            tabcp[iel] = el + [None] * (len(tabcp[0]) - len(el))
         tabcp = np.array(tabcp).T.tolist()
         for iel, el in enumerate(tabcp):
             tabcp[iel] = [ell for ell in el if ell is not None]
@@ -1387,6 +1455,7 @@ class Permutation:
         Aux function for the recursion algo
         """
         if not (self.checkStandardTableaux(tab)):
+            print("exiting: ",tab)
             return []
         # stop criterion for the recursion
         # flatten tab
@@ -1398,6 +1467,7 @@ class Permutation:
         # flatten removes Nones
         temp = [el for el in flttab if el is not None]
         missingNumbers = [el for el in range(1, n + 1) if not (el in temp)]
+        print(missingNumbers," ",n, flttab)
         stop = False
         for idi, i in enumerate(tab):
             if stop:
@@ -1442,3 +1512,38 @@ class Permutation:
                    i in range(1, n1 + 1)]
         result = reduce(operator.mul, flatten(aux))
         return result
+
+    def _decompositionTypeCholesky(self, matrix):
+        """
+        falls back to the regular Cholesky for sym matrices
+        """
+        n = len(matrix)
+        shape = matrix.shape
+        matrix = np.array([int(el) if int(el) == el else el for el in matrix.ravel()], dtype=object).reshape(shape)
+        matD = np.zeros((n, n), dtype=object)
+        matL = np.eye(n, dtype=object)
+        for i in range(n):
+            for j in range(i):
+                if matD[j, j] != 0:
+                    if type(matD[j, j]) in [Add, Mul]:
+                        coeff = 1 / matD[j, j]
+                    else:
+                        coeff = Rational(1, matD[j, j])
+                    matL[i, j] = coeff * (
+                        matrix[i, j] - sum([matL[i, k] * np.conjugate(matL[j, k]) * matD[k, k]
+                                            for k in range(j)])
+                    )
+                else:
+                    matL[i, j] = 0
+            matD[i, i] = matrix[i, i] - sum([matL[i, k] * np.conjugate(matL[i, k]) * matD[k, k] for k in range(i)])
+        # get the sqrt of the diagonal matrix:
+        if np.all(matD.transpose() != matD):
+            exit("Error, the matD is not diagonal cannot take the sqrt.")
+        else:
+            matDsqr = diag(*[sqrt(el) for el in matD.diagonal()])
+            result = (matL * matDsqr).transpose()
+            #  Make the resulting matrix as small as possible by eliminating null columns
+            result = np.array(
+                [np.array(result.row(i))[0] for i in range(result.rows) if result.row(i) != zeros(1, n)]).transpose()
+        return result
+
