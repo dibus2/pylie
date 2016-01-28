@@ -133,6 +133,10 @@ class LieAlgebra(object):
         self._symbdummy = [self.f, self.g, self.h, self.i]
         self.p, self.q = map(Wild, ['p', 'q'])
         self.pp = Wild('pp', exclude=[IndexedBase])
+        # create an Sn object for all the manipulation on the  Sn  group
+        self.Sn = Sn()
+        # create a MathGroup object for the auxiliary functions
+        self.math = MathGroup()
 
     def _matrixD(self):
         """
@@ -561,7 +565,7 @@ class LieAlgebra(object):
                     matrix = matrixT.transpose()
                 aux1 = sum([self._indic(dim, self._nptokey(listw[element][0] + self.ncm[i])) for i in range(self._n)])
                 aux2 = self._indic(dim, self._nptokey(listw[element][0]))
-                cho = self._decompositionTypeCholesky(matrix)
+                cho = self.math._decompositionTypeCholesky(matrix)
                 if cho.shape == (0,):
                     aux3 = np.array([[0]])
                 else:
@@ -1177,40 +1181,6 @@ class LieAlgebra(object):
         self._repMatrices[tag] = listTotal
         return listTotal
 
-    def _decompositionTypeCholesky(self, matrix):
-        """
-        falls back to the regular Cholesky for sym matrices
-        """
-        n = len(matrix)
-        shape = matrix.shape
-        matrix = np.array([int(el) if int(el) == el else el for el in matrix.ravel()], dtype=object).reshape(shape)
-        matD = np.zeros((n, n), dtype=object)
-        matL = np.eye(n, dtype=object)
-        for i in range(n):
-            for j in range(i):
-                if matD[j, j] != 0:
-                    if type(matD[j, j]) in [Add, Mul]:
-                        coeff = 1 / matD[j, j]
-                    else:
-                        coeff = Rational(1, matD[j, j])
-                    matL[i, j] = coeff * (
-                        matrix[i, j] - sum([matL[i, k] * np.conjugate(matL[j, k]) * matD[k, k]
-                                            for k in range(j)])
-                    )
-                else:
-                    matL[i, j] = 0
-            matD[i, i] = matrix[i, i] - sum([matL[i, k] * np.conjugate(matL[i, k]) * matD[k, k] for k in range(i)])
-        # get the sqrt of the diagonal matrix:
-        if np.all(matD.transpose() != matD):
-            exit("Error, the matD is not diagonal cannot take the sqrt.")
-        else:
-            matDsqr = diag(*[sqrt(el) for el in matD.diagonal()])
-            result = (matL * matDsqr).transpose()
-            #  Make the resulting matrix as small as possible by eliminating null columns
-            result = np.array(
-                [np.array(result.row(i))[0] for i in range(result.rows) if result.row(i) != zeros(1, n)]).transpose()
-        return result
-
     def _nptokey(self, array):
         return tuple(array.ravel())
 
@@ -1347,18 +1317,58 @@ class LieAlgebra(object):
         result = [el for el in result if el[1] != 0]
         return result
 
+    def permutationSymmetryOfInvariants(self, listofreps):
+        """
+        Computes how many invariant combinations there are in the product of the representations of the gauge group
+         provided, together with the information on how these invariants change under a permutation of the representations
+         - The output is rather complex (see the examples below). It is made of two lists: {indices, SnRepresentations}.
+          The first one (indices) indicates the position of equal representations in the  input list. So indices={G1, G2, \[CenterEllipsis]}
+          where each GI lists the positions of a group of equal representations. For example, if the input list is {Subscript[R, 1], Subscript[R, 2],Subscript[R, 1], Subscript[R, 2]} for some representation Subscript[R, 1], Subscript[R, 2] of the gauge group, indices will be {{1,3},{2,4}} (the representations in positions 1 and 3 are the same, as well as the ones in the positions 2 and 4). The second list (SnRepresentations) is itself a list {SnRep1, SnRep2, \[CenterEllipsis]} with the break down of the gauge invariants according to how they change under permutations of equal representations. Specifically, each SnRepI is of the form {{SnRepIG1, SnRepIG2, \[CenterEllipsis]}, multiplicity} where each SnRepIGJ is the irreducible representation of an Subscript[S, n] induced when the same fields in the grouping GJ are permuted. multiplicity indicates how many times such a gauge invariant is contained in the product of the representations of the gauge group provided.
+        :param listofreps:
+        :return:
+        """
+
+        indices, invariants = self._permutationSymmetryOfInvariantsProductParts(listofreps)
+        invariants = deleteCases(invariants)
+
+    def _permutationSymmetryOfInvariantsProductParts(self, listofreps):
+        """
+        This calculates the Plethysms in a tensor product of different fields/representations *)
+        """
+        pudb.set_trace()
+        listofreps = [[el] for el in listofreps]
+        tally, mul = [], []
+        for el in listofreps:
+            if not (el in tally):
+                mul.append(listofreps.count(el))
+                tally.append(el)
+        aux1 = zip(tally, mul)
+        plesthysmFields = [[i + 1 for i, el in enumerate(listofreps) if el == ell[0]] for ell in aux1]
+        aux2 = [self._permutationSymmetryOfInvariantsProductPartsAux(aux1[i][0], aux1[i][1]) for i in range(len(aux1))]
+
+    def _permutationSymmetryOfInvariantsProductPartsAux(self, rep, n):
+        intPartitionsN = self.math._partitionInteger(n)
+        aux = self.math._tuples(intPartitionsN, 1) # this differs from the original algo because we only consider a single group factor
+        snPart = [self.Sn.decomposeSnProduct(el) for el in aux]
+        pudb.set_trace()
+
+
 
 class Sn:
     def __init__(self):
-        pass
+        # declare a MathGroup object to access the standard method
+        self.math = MathGroup()
 
     def snIrrepGenerators(self, Lambda, orthogonalize=True):
         """
         returns the matrices that generate Sn
+        - representation must be a partition of some integer n, as irreducible representations of  Subscript[S, n] are specified in this way;
+        - Note with the (12) and (12...n) elements of the Subscript[S, n] group alone, it is possible to generate all remaining group elements, for any n;
+        - This function returns two real orthogonal/unitary matrices which are the representation matrices of the elements (12) and (12...n) elements of the Subscript[S, n] group. If orthogonality is not required, the option OrthogonalizeGenerators->False can be used \[LongDash] the resulting matrices have less complicated values, and the code is executed faster.
         """
         n = sum(Lambda)
         sts = self.generateStandardTableaux(Lambda)
-        basicPermutations = [Permutation(1, 2), Permutation(*range(1, n+1))]
+        basicPermutations = [Permutation(1, 2), Permutation(*range(1, n + 1))]
         # because the length of the lists on which we apply the permutations is not constant we need to resize them for each element
         tabloids, stsX = [], []
         for perm in basicPermutations:
@@ -1374,18 +1384,25 @@ class Sn:
             # TODO IMPLEMENT THE DELETE DUPLICATES
             tabloids.append(stscp)
             stsX.append(sts_nosort)
-        X, Y = np.zeros((2, len(sts), len(tabloids[0])), dtype=int), np.zeros((2, len(sts), len(tabloids[0])), dtype=int)
+        X, Y = np.zeros((2, len(sts), len(tabloids[0])), dtype=int), np.zeros((2, len(sts), len(tabloids[0])),
+                                                                              dtype=int)
         for alpha in range(2):
             for i in range(len(sts)):
                 for j in range(len(tabloids[alpha])):
                     startingTableauxY = sts[i]
                     startingTableauxX = stsX[alpha][i]
                     targetTabloid = tabloids[alpha][j]
-                    tmp = [[self._position_in_array(targetTabloid, ell)[0][0] for ell in el] for el in self._transposeTableaux(startingTableauxY)]
-                    Y[alpha][i][j] = reduce(operator.mul, [0 if sorted(el) != range(len(el)) else Permutation(el).signature() for el in tmp])
-                    tmp = [[self._position_in_array(targetTabloid, ell)[0][0] for ell in el] for el in self._transposeTableaux(startingTableauxX)]
-                    X[alpha][i][j] = reduce(operator.mul, [0 if sorted(el) != range(len(el)) else Permutation(el).signature() for el in tmp])
-        result = [(SparseMatrix(X[i])*SparseMatrix(Y[i]).inv()).transpose() for i in range(2)]
+                    tmp = [[self.math._position_in_array(targetTabloid, ell)[0][0] for ell in el] for el in
+                           self._transposeTableaux(startingTableauxY)]
+                    Y[alpha][i][j] = reduce(operator.mul,
+                                            [0 if sorted(el) != range(len(el)) else Permutation(el).signature() for el
+                                             in tmp])
+                    tmp = [[self.math._position_in_array(targetTabloid, ell)[0][0] for ell in el] for el in
+                           self._transposeTableaux(startingTableauxX)]
+                    X[alpha][i][j] = reduce(operator.mul,
+                                            [0 if sorted(el) != range(len(el)) else Permutation(el).signature() for el
+                                             in tmp])
+        result = [(SparseMatrix(X[i]) * SparseMatrix(Y[i]).inv()).transpose() for i in range(2)]
         # Finally let's orthogonalize the generators P_i
         # Oi = B.Pi.Inverse[B], Oi are ortho and B the change of basis
         # since Pi are real Pi^T.(B^T.B).Pi = B^T.B
@@ -1393,49 +1410,28 @@ class Sn:
         # an irreducible representation
         # With KroneckerProduct and NullSpace, B^T.B can be found, and B can be obtained with the CholeskyTypeDecomposition
         if orthogonalize:
-            Id = eye((result[0].shape[0])**2)
+            Id = eye((result[0].shape[0]) ** 2)
             aux = [np.transpose(np.kron(np.conjugate(el), el)) for el in result]
-            ns = Matrix(np.concatenate((aux[0]-Id, aux[1]-Id), axis=0)).nullspace()
+            ns = Matrix(np.concatenate((aux[0] - Id, aux[1] - Id), axis=0)).nullspace()
             if ns != []:
                 ns = ns[0]
             else:
                 exit("Impossible to find null space in SnGenerator.")
-            BcB = self._inverseFlatten(ns, [result[0].shape[0], result[0].shape[0]])
-            B = SparseMatrix(self._decompositionTypeCholesky(np.array(BcB))).transpose()
-            result = [B*el*B.inv() for el in result]
+            BcB = self.math._inverseFlatten(ns, [result[0].shape[0], result[0].shape[0]])
+            B = SparseMatrix(self.math._decompositionTypeCholesky(np.array(BcB))).transpose()
+            result = [B * el * B.inv() for el in result]
         return result
 
-    def _partition(self, llist, llen):
-        # partition llist into sublist of length len
-        res = []
-        llistcp = cp.deepcopy(llist)
-        while len(llistcp) >= llen:
-            print(llistcp)
-            res.append(llistcp[:llen])
-            llistcp = llistcp[llen:]
-        print(res, llist, llen)
-        return res
+    def decomposeSnProduct(self, partitionsList):
+        """
+        This method decomposes the product of a list of Sn rep into its irreducible parts
+        """
+        pudb.set_trace()
+        n = sum(partitionsList[0])
+        result = 1/factorial(n)*[sum([
+            self.snClassOrder[i]*reduce(operator.mul, [self.snClassCharacter(inputPartition, i) for inputPartition in partitionsList])
+            * self.snClassCharacter(j, i) for i in self._partition(n)]) for j in self._partition(n)]
 
-
-    def _inverseFlatten(self, flattenedList, dims):
-        lbd = lambda x, y: self._partition(x, y)
-        return reduce(lbd, [flattenedList] + dims[::-1][:-1])
-
-    def _position_in_array(self, target, elem):
-        # returns the positions elem in target assume only one occurence
-        pos = []
-        for iel, el in enumerate(target):
-            if elem in el:
-                pos.append([iel, el.index(elem)])
-                break
-        return pos
-
-    def _rotateleft(self, llist, n):
-        return llist[n:] + llist[:n]
-
-    def _issorted(self, llist):
-        # returns wether a list is sorted
-        return all([llist[i] <= llist[i + 1] or llist[i + 1] is None for i in xrange(len(llist) - 1)])
 
     def checkStandardTableaux(self, tab):
         """
@@ -1524,7 +1520,13 @@ class Sn:
         result = reduce(operator.mul, flatten(aux))
         return result
 
-    def _decompositionTypeCholesky(self, matrix):
+
+
+class MathGroup:
+    def __init__(self):
+        pass
+
+    def decompositionTypeCholesky(self, matrix):
         """
         falls back to the regular Cholesky for sym matrices
         """
@@ -1558,3 +1560,52 @@ class Sn:
                 [np.array(result.row(i))[0] for i in range(result.rows) if result.row(i) != zeros(1, n)]).transpose()
         return result
 
+    def _partition(self, llist, llen):
+        # partition llist into sublist of length len
+        res = []
+        llistcp = cp.deepcopy(llist)
+        while len(llistcp) >= llen:
+            print(llistcp)
+            res.append(llistcp[:llen])
+            llistcp = llistcp[llen:]
+        print(res, llist, llen)
+        return res
+
+    def _inverseFlatten(self, flattenedList, dims):
+        lbd = lambda x, y: self._partition(x, y)
+        return reduce(lbd, [flattenedList] + dims[::-1][:-1])
+
+    def _position_in_array(self, target, elem):
+        # returns the positions (x,y) of elem in target assume only one occurence
+        # e.g. {{1,2,3},{3,4}} -> position_in_array(1) -> (0,0)
+        pos = []
+        for iel, el in enumerate(target):
+            if elem in el:
+                pos.append([iel, el.index(elem)])
+                break
+        return pos
+
+    def _rotateleft(self, llist, n):
+        return llist[n:] + llist[:n]
+
+    def _issorted(self, llist):
+        # returns wether a list is sorted
+        return all([llist[i] <= llist[i + 1] or llist[i + 1] is None for i in xrange(len(llist) - 1)])
+
+    def _tuples(self, llist, n):
+        """
+        returns all the possible tuples of length n from elementes of llist
+        """
+        return sorted(list(set(sum([list(itertools.permutations(el)) for el in itertools.combinations_with_replacement(llist, n)], []))))
+
+    def _yieldParts(self, num, lt):
+        if not num:
+            yield ()
+        for i in range(min(num, lt), 0, -1):
+            for parts in self._yieldParts(num - i, i):
+                yield (i, ) + parts
+
+    def _partitionInteger(self, num):
+        # returns all the partition of num
+        for part in self._yieldParts(num, num):
+            yield part
