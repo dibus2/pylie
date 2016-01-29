@@ -1335,23 +1335,97 @@ class LieAlgebra(object):
         """
         This calculates the Plethysms in a tensor product of different fields/representations *)
         """
-        pudb.set_trace()
         listofreps = [[el] for el in listofreps]
-        tally, mul = [], []
-        for el in listofreps:
-            if not (el in tally):
-                mul.append(listofreps.count(el))
-                tally.append(el)
-        aux1 = zip(tally, mul)
+        aux1 = self.math.tally(listofreps)
         plesthysmFields = [[i + 1 for i, el in enumerate(listofreps) if el == ell[0]] for ell in aux1]
         aux2 = [self._permutationSymmetryOfInvariantsProductPartsAux(aux1[i][0], aux1[i][1]) for i in range(len(aux1))]
 
     def _permutationSymmetryOfInvariantsProductPartsAux(self, rep, n):
         intPartitionsN = self.math._partitionInteger(n)
-        aux = self.math._tuples(intPartitionsN, 1) # this differs from the original algo because we only consider a single group factor
+        aux = self.math._tuples(intPartitionsN,
+                                1)  # this differs from the original algo because we only consider a single group factor
         snPart = [self.Sn.decomposeSnProduct(el) for el in aux]
-        pudb.set_trace()
+        aux = [self._plethysms(rep[j], i[j]) for i in aux for j in range(len(i))]
 
+    def _plethysms(self, weight, partition):
+        pudb.set_trace()
+        # TODO Re-start here for the comparison
+        n = sum(partition)
+        kList = list(self.math._partitionInteger(n))
+        summing = []
+        for i in range(len(kList)):
+            factor = 1 / factorial(n) * self.Sn.snClassOrder(kList[i]) * self.Sn.snClassCharacter(partition, kList[i])
+            aux = [self._adams(el, weight) for el in kList]
+            aux = self._reduceRepPolyProduct(aux)
+            aux = [(el[0], factor(el[1])) for el in aux]
+            summing.append(aux)
+        summing = self._gatherWeights(summing)
+        return sum
+
+    def _reduceRepPolyProduct(self, polylist):
+        """
+        (* This method calculates the decompositions of a product of sums of irreps: (R11+R12+R13+...) x (R21+R22+R23+...) x ... *)
+        (* polyList = list of lists of representations to be multiplied. The method outputs the decomposition of such a product *)
+        """
+        n = len(polylist)
+        aux = polylist[0]
+        if n <= 1:
+            return aux
+        for i in range(n - 1):
+            aux = list(self.math._tuplesList([aux, polylist[i + 1]]))
+            aux2 = [self.reduceRepProduct([ell[0] for ell in el[0:2]]) for el in aux]
+            aux = self._gatherWeights(aux2, [el[0][1] * el[1][1] for el in aux])
+        return aux
+
+    def _gatherAux(self, llist):
+        gather = []
+        gathered = []
+        for el in llist:
+            if el[0] in gathered:
+                iel = gathered.index(el[0])
+                gather[iel].append(el)
+            else:
+                gather.append([el])
+                gathered.append(el[0])
+        return gather
+
+    def _gatherWeights(self, listW, listMult):
+        aux = [[[el[0], listMult[i] * el[1]] for el in listW[i]] for i in range(len(listW))]
+        aux = sum(aux, [])
+        aux = self._gatherAux(aux)
+        aux = [[el[0][0], sum([ell[1] for ell in el[0:]])] for el in aux]
+        aux = [el for el in aux if el[1] != 0]
+        return aux
+
+    def _adams(self, n, rep):
+        aux = self._dominantWeights(rep)
+        aux = [((el[0] * n).tolist()[0], el[1]) for el in aux]
+        result = [[self._vdecomp(aux[i][0]), aux[i][1]] for i in range(len(aux))]
+        result = [[result[i][0][j][0], result[i][0][j][1] * result[i][1]] for j in range(len(result[i][0])) for i in
+                  range(len(result))]
+        return result
+
+    def _vdecomp(self, dominantWeight):
+        # return self._altDom1Arg([el.tolist()[0] for el in self._weylOrbit(dominantWeight)])
+        return self._altDom1Arg(self._weylOrbit(dominantWeight))
+
+    def _altDom1Arg(self, weights):
+        return self._altDom(weights, self.longestWeylWord)
+
+    def _altDom(self, weights, weylWord):
+        prov = [[el, 1] for el in weights]
+        for i in range(len(weylWord)):
+            for j in range(len(prov)):
+                if prov[j][1] != 0:
+                    if prov[j][0][weylWord[i] - 1] >= 0:
+                        pass
+                    elif prov[j][0][weylWord[i] - 1] == -1:
+                        prov[j][1] = 0
+                    elif prov[j][0][weylWord[i] - 1] <= -2:
+                        prov[j][1] = - prov[j][1]
+                        prov[j][0] = [prov[j][0][0] - (prov[j][0][weylWord[i] - 1] + 1) * self.cm[weylWord[i] - 1]]
+        prov = [el for el in prov if not (el[1] == 0)]
+        return prov
 
 
 class Sn:
@@ -1426,12 +1500,57 @@ class Sn:
         """
         This method decomposes the product of a list of Sn rep into its irreducible parts
         """
-        pudb.set_trace()
         n = sum(partitionsList[0])
-        result = 1/factorial(n)*[sum([
-            self.snClassOrder[i]*reduce(operator.mul, [self.snClassCharacter(inputPartition, i) for inputPartition in partitionsList])
-            * self.snClassCharacter(j, i) for i in self._partition(n)]) for j in self._partition(n)]
+        result = [1 / factorial(n) * sum([
+                                             self.snClassOrder(i) * reduce(operator.mul, [
+                                                 self.snClassCharacter(inputPartition, list(i)) for inputPartition in
+                                                 partitionsList])
+                                             * self.snClassCharacter(list(j), list(i)) for i in
+                                             list(self.math._partitionInteger(n))]) for j in
+                  list(self.math._partitionInteger(n))]
+        return result
 
+    def snClassOrder(self, partition):
+        """
+        size of a given conjugacy class of Sn. The formula is easy but see for example
+         Enumerative Combinatorics", Richard P.Stanley, http://math.mit.edu/~rstan/ec/ec1.pdf, 1.3.2 Proposition"
+        """
+        n = sum(partition)
+        aux = self.math.tally(partition)
+        return factorial(n) / (
+            reduce(operator.mul, [aux[i][0] ** aux[i][1] * factorial(aux[i][1]) for i in range(len(aux))]))
+
+    def snClassCharacter(self, partitionL, partitionM):
+        """
+        (* See arXiv:math/0309225v1[math.CO] for the way to compute SnClassCharacter from the Murnaghan-Nakayama rule  *)
+(* \[Lambda] is the representation; \[Mu] is the conjugacy class. This method computes the character of conjugacy class \mu in the irreducible representation \[Lambda]  *
+        """
+        if len(partitionL) == 0:
+            return 1
+        n = sum(partitionL)
+        if n != sum(partitionM):
+            exit("Error in SnClassCharacter method: both partitions must be of the same order.")
+            return
+        newL = self.rimHooks(partitionL, partitionM[0])
+        newM = partitionM[1:]
+        result = sum([(-1) ** newL[i][1] * self.snClassCharacter(newL[i][0], newM) for i in range(len(newL))])
+        return result
+
+    def rimHooks(self, partition, l):
+        """
+        (* See arXiv:math/0309225v1[math.CO] - this is an auxiliar method to calculate SnClassCharacter *)
+        (* This method finds all the rim hooks \[Xi] with length l and returns a list with all the possibilities {partition\\[Xi], leg length of rim hook \[Xi]} which is writen as {partition\\[Xi],ll(\[Xi])}*)
+        """
+        sequence = self._partitionSequence(partition)
+        result = []
+        for i in range(len(sequence) - l):
+            if sequence[i] == 1 and sequence[i + l] == 0:
+                seqMinusHook = cp.deepcopy(sequence)
+                seqMinusHook[i] = 0
+                seqMinusHook[i + l] = 1
+                length = sequence[i:i + l + 1].count(0) - 1
+                result.append((self._rebuildPartitionFromSequence(seqMinusHook), length))
+        return result
 
     def checkStandardTableaux(self, tab):
         """
@@ -1520,6 +1639,27 @@ class Sn:
         result = reduce(operator.mul, flatten(aux))
         return result
 
+    def _partitionSequence(self, partition):
+        sequence = [1] * partition[-1]
+        sequence.append(0)
+        for i in range(1, len(partition)):
+            sequence = sequence + [1] * (partition[-i - 1] - partition[-i])
+            sequence.append(0)
+        return sequence
+
+    def _rebuildPartitionFromSequence(self, sequence):
+        """
+        (* See arXiv:math/0309225v1[math.CO] - this is an auxiliar method to calculate SnClassCharacter *)
+        (* RebuiltPartitionFromSequence[PartitionSequence[partition]]=partition *)
+        """
+        counter1s = 0
+        result = []
+        for i in range(len(sequence)):
+            if sequence[i] == 0:
+                result.insert(0, counter1s)
+            else:
+                counter1s += 1
+        return [el for el in result if el != 0]
 
 
 class MathGroup:
@@ -1596,16 +1736,28 @@ class MathGroup:
         """
         returns all the possible tuples of length n from elementes of llist
         """
-        return sorted(list(set(sum([list(itertools.permutations(el)) for el in itertools.combinations_with_replacement(llist, n)], []))))
+        return sorted(list(set(
+            sum([list(itertools.permutations(el)) for el in itertools.combinations_with_replacement(llist, n)], []))))
+
+    def _tuplesList(self, llist):
+        return itertools.product(*llist)
 
     def _yieldParts(self, num, lt):
         if not num:
             yield ()
         for i in range(min(num, lt), 0, -1):
             for parts in self._yieldParts(num - i, i):
-                yield (i, ) + parts
+                yield (i,) + parts
 
     def _partitionInteger(self, num):
         # returns all the partition of num
         for part in self._yieldParts(num, num):
             yield part
+
+    def tally(self, llist):
+        tally, mul = [], []
+        for el in llist:
+            if not (el in tally):
+                mul.append(llist.count(el))
+                tally.append(el)
+        return zip(tally, mul)
