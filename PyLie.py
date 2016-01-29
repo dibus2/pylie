@@ -1329,7 +1329,9 @@ class LieAlgebra(object):
         """
 
         indices, invariants = self._permutationSymmetryOfInvariantsProductParts(listofreps)
-        invariants = deleteCases(invariants)
+        invariants = [el for el in invariants if np.all(np.array(el[0][0])*0 == np.array(el[0][0]))]
+        invariants = [[el[0][1],el[1]] for el in invariants]
+        return [indices, invariants]
 
     def _permutationSymmetryOfInvariantsProductParts(self, listofreps):
         """
@@ -1339,28 +1341,41 @@ class LieAlgebra(object):
         aux1 = self.math.tally(listofreps)
         plesthysmFields = [[i + 1 for i, el in enumerate(listofreps) if el == ell[0]] for ell in aux1]
         aux2 = [self._permutationSymmetryOfInvariantsProductPartsAux(aux1[i][0], aux1[i][1]) for i in range(len(aux1))]
+        aux2 = self.math._tuplesWithMultiplicity(aux2)
+        aux3 = [[self.reduceRepProduct([el[0] for el in ell[0]][0])]for ell in aux2]
+        aux3 = sum([[[[aux3[i][j][0], [el[1] for el in aux2[i][0]]], aux3[i][j][1] * aux2[i][1]]
+                for j in range(len(aux3[i]))]
+                for i in range(len(aux3))], [])
+        aux3 = self.math._tallyWithMultiplicity(aux3)
+        return [plesthysmFields, aux3]
 
     def _permutationSymmetryOfInvariantsProductPartsAux(self, rep, n):
-        intPartitionsN = self.math._partitionInteger(n)
-        aux = self.math._tuples(intPartitionsN,
-                                1)  # this differs from the original algo because we only consider a single group factor
+        intPartitionsN = list(self.math._partitionInteger(n))
+        # this differs from the original algo because we only consider a single group factor
+        aux = self.math._tuples(intPartitionsN, 1)
         snPart = [self.Sn.decomposeSnProduct(el) for el in aux]
         aux = [self._plethysms(rep[j], i[j]) for i in aux for j in range(len(i))]
+        aux = [self.math._tuplesWithMultiplicity([el]) for el in aux]
+        aux = [[[[[aux[i][j][0], intPartitionsN[k]], aux[i][j][1] * snPart[i][k]]
+                 for k in range(len(intPartitionsN))]
+                for j in range(len(aux[i]))]
+               for i in range(len(aux))]
+        aux = [el for el in sum(sum(aux, []), []) if not (el[-1] == 0)]
+        result = self.math._tallyWithMultiplicity(aux)
+        return result
 
     def _plethysms(self, weight, partition):
-        pudb.set_trace()
-        # TODO Re-start here for the comparison
         n = sum(partition)
         kList = list(self.math._partitionInteger(n))
         summing = []
         for i in range(len(kList)):
             factor = 1 / factorial(n) * self.Sn.snClassOrder(kList[i]) * self.Sn.snClassCharacter(partition, kList[i])
-            aux = [self._adams(el, weight) for el in kList]
+            aux = [self._adams(el, weight) for el in kList[i]]
             aux = self._reduceRepPolyProduct(aux)
-            aux = [(el[0], factor(el[1])) for el in aux]
+            aux = [(el[0], factor * el[1]) for el in aux]
             summing.append(aux)
-        summing = self._gatherWeights(summing)
-        return sum
+        summing = self._gatherWeightsSingle(summing)
+        return summing
 
     def _reduceRepPolyProduct(self, polylist):
         """
@@ -1377,22 +1392,17 @@ class LieAlgebra(object):
             aux = self._gatherWeights(aux2, [el[0][1] * el[1][1] for el in aux])
         return aux
 
-    def _gatherAux(self, llist):
-        gather = []
-        gathered = []
-        for el in llist:
-            if el[0] in gathered:
-                iel = gathered.index(el[0])
-                gather[iel].append(el)
-            else:
-                gather.append([el])
-                gathered.append(el[0])
-        return gather
+    def _gatherWeightsSingle(self, llist):
+        aux = sum(llist, [])
+        aux = self.math._gatherAux(aux)
+        aux = [[el[0][0], sum([ell[1] for ell in el])] for el in aux]
+        aux = [el for el in aux if el[1] != 0]
+        return aux
 
     def _gatherWeights(self, listW, listMult):
         aux = [[[el[0], listMult[i] * el[1]] for el in listW[i]] for i in range(len(listW))]
         aux = sum(aux, [])
-        aux = self._gatherAux(aux)
+        aux = self.math._gatherAux(aux)
         aux = [[el[0][0], sum([ell[1] for ell in el[0:]])] for el in aux]
         aux = [el for el in aux if el[1] != 0]
         return aux
@@ -1742,6 +1752,13 @@ class MathGroup:
     def _tuplesList(self, llist):
         return itertools.product(*llist)
 
+    def _tuplesWithMultiplicity(self, listoflists):
+        aux1 = list(self._tuplesList(listoflists))
+        aux2 =  [reduce(operator.mul,[ell[1] for ell in el]) for el in aux1]
+        aux1 = [[ell[0] for ell in el] for el in aux1]
+        res = zip(aux1, aux2)
+        return res
+
     def _yieldParts(self, num, lt):
         if not num:
             yield ()
@@ -1761,3 +1778,22 @@ class MathGroup:
                 mul.append(llist.count(el))
                 tally.append(el)
         return zip(tally, mul)
+
+    def _tallyWithMultiplicity(self, listoflists):
+        aux1 = self._gatherAux(listoflists)
+        aux2 = [sum([ell[1] for ell in el]) for el in aux1]
+        aux1 = [el[0][0] for el in aux1]
+        result = zip(aux1, aux2)
+        return result
+
+    def _gatherAux(self, llist):
+        gather = []
+        gathered = []
+        for el in llist:
+            if el[0] in gathered:
+                iel = gathered.index(el[0])
+                gather[iel].append(el)
+            else:
+                gather.append([el])
+                gathered.append(el[0])
+        return gather
