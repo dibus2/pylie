@@ -693,24 +693,7 @@ class LieAlgebra(object):
             invs, maxinds = self._invariants4Irrep([], skey, conj)
         else:
             exit("Error, only 2, 3 or 4 irrep should be passed.")
-        # Let's now obtain the tensor expression of the result TODO I am actully not sure this is needed
-        # tensor = []
-        # for i, el in enumerate(maxinds):
-        #    tensor.append([(self._symblist[i][j + 1], j) for j in range(el)])
-        # tensorInd = itertools.product(*tensor)
-        # tensorExp = np.zeros([1] + maxinds, dtype=object)
-        # for iel, el in enumerate(invs):
-        #    for elem in tensorInd:
-        #        tpmatch = el.match(self.pp * reduce(operator.mul, [xelem[0] for xelem in elem]) + self.q)
-        #        if tpmatch != None:
-        #            if len(elem) == 2:
-        #                tensorExp[iel, elem[0][1], elem[1][1]] = tpmatch[self.pp]
-        #            elif len(elem) == 3:
-        #                tensorExp[iel, elem[0][1], elem[1][1], elem[2][1]] = tpmatch[self.pp]
-        #            elif len(elem) == 4:
-        #                tensorExp[iel, elem[0][1], elem[1][1], elem[2][1], elem[3][1]] = tpmatch[self.pp]
-        #            else:
-        #                exit("Error, cannot determin the tensor form for more than 4 fields contracted together")
+        # TODO implement a tensor expression
         ## TODO normalize the invariants
         pudb.set_trace()
         # tensorExp = self._normalizeInvariantsTensor([reps[i] if not(cjs[i]) else self.conjugateIrrep(reps[i]) for i in range(len(reps))], tensorExp)
