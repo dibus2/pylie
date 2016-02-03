@@ -1101,13 +1101,13 @@ class LieAlgebra(object):
 
     def _symmetrizeInvariants(self, reps, invs, cjs):
         #  TODO
+        pudb.set_trace()
         return invs
 
     def _normalizeInvariants(self, representations, invs):
         """
          returns the invariants normalized to Sum |c_ij|^2 = Sqrt(dim(irrep1)dim(irrep2)...dim(irrepn))
         """
-        # Sqrt(Prod(dim(irrep[i])),{i,1,n})
         repDims = sqrt(reduce(operator.mul, [self.dimR(el) for el in representations], 1))
         for iel, el in enumerate(invs):
             norm = sum([ell.replace(self.a[self.q], 1).replace(self.b[self.q], 1).replace(self.c[self.q], 1).replace(
