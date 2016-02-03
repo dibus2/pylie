@@ -712,6 +712,7 @@ class LieAlgebra(object):
         #            else:
         #                exit("Error, cannot determin the tensor form for more than 4 fields contracted together")
         ## TODO normalize the invariants
+        pudb.set_trace()
         # tensorExp = self._normalizeInvariantsTensor([reps[i] if not(cjs[i]) else self.conjugateIrrep(reps[i]) for i in range(len(reps))], tensorExp)
         invs = self._normalizeInvariants(reps, invs)
         # TODO symmetrize the invariants
@@ -1327,12 +1328,9 @@ class LieAlgebra(object):
         :param listofreps:
         :return:
         """
-
-
         indices, invariants = self._permutationSymmetryOfInvariantsProductParts(listofreps)
         invariants = [el for el in invariants if np.all(np.array(el[0][0]) * 0 == np.array(el[0][0]))]
         invariants = [[el[0][1], el[1]] for el in invariants]
-        pudb.set_trace()
         return [indices, invariants]
 
     def _permutationSymmetryOfInvariantsProductParts(self, listofreps):
@@ -1681,7 +1679,7 @@ class MathGroup:
     def __init__(self):
         pass
 
-    def decompositionTypeCholesky(self, matrix):
+    def _decompositionTypeCholesky(self, matrix):
         """
         falls back to the regular Cholesky for sym matrices
         """
