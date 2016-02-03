@@ -10,6 +10,7 @@ It is a python implementation of the Susyno group method.
 import pudb
 import sys
 
+import time
 sys.path.insert(0, '/Applications/HEPtools/sympy-0.7.6')
 import numpy as np
 from sympy import *
@@ -694,8 +695,18 @@ class LieAlgebra(object):
         else:
             exit("Error, only 2, 3 or 4 irrep should be passed.")
         # TODO implement a tensor expression
-        ## TODO normalize the invariants
-        pudb.set_trace()
+        coeffs = [el.as_coefficients_dict() for el in invs]
+        for iel, el in enumerate(coeffs):
+            tpdic = {}
+            for key, val in el.items():
+                collect,fac = [], []
+                for ell in key.args:
+                    if not(type(ell) == Indexed):
+                        fac.append(ell)
+                    else:
+                        collect.append(ell.args[1])
+                tpdic[tuple(collect)] = val*reduce(operator.mul,fac,1)
+            coeffs[iel] = tpdic
         # tensorExp = self._normalizeInvariantsTensor([reps[i] if not(cjs[i]) else self.conjugateIrrep(reps[i]) for i in range(len(reps))], tensorExp)
         invs = self._normalizeInvariants(reps, invs)
         # TODO symmetrize the invariants
