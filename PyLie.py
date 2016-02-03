@@ -1271,7 +1271,7 @@ class LieAlgebra(object):
         Reduces a direct product of representation to its irreducible parts
         """
         if len(repslist) == 1:
-            return [repslist, 1]
+            return [[repslist, 1]]
         # order the list by dimension
         orderedlist = sorted(repslist, key=lambda x: self.dimR(x))
         n = len(orderedlist)
@@ -1328,9 +1328,11 @@ class LieAlgebra(object):
         :return:
         """
 
+
         indices, invariants = self._permutationSymmetryOfInvariantsProductParts(listofreps)
-        invariants = [el for el in invariants if np.all(np.array(el[0][0])*0 == np.array(el[0][0]))]
-        invariants = [[el[0][1],el[1]] for el in invariants]
+        invariants = [el for el in invariants if np.all(np.array(el[0][0]) * 0 == np.array(el[0][0]))]
+        invariants = [[el[0][1], el[1]] for el in invariants]
+        pudb.set_trace()
         return [indices, invariants]
 
     def _permutationSymmetryOfInvariantsProductParts(self, listofreps):
@@ -1342,10 +1344,10 @@ class LieAlgebra(object):
         plesthysmFields = [[i + 1 for i, el in enumerate(listofreps) if el == ell[0]] for ell in aux1]
         aux2 = [self._permutationSymmetryOfInvariantsProductPartsAux(aux1[i][0], aux1[i][1]) for i in range(len(aux1))]
         aux2 = self.math._tuplesWithMultiplicity(aux2)
-        aux3 = [[self.reduceRepProduct([el[0] for el in ell[0]][0])]for ell in aux2]
+        aux3 = [self.reduceRepProduct([ell[0][0] for ell in el[0]]) for el in aux2]
         aux3 = sum([[[[aux3[i][j][0], [el[1] for el in aux2[i][0]]], aux3[i][j][1] * aux2[i][1]]
-                for j in range(len(aux3[i]))]
-                for i in range(len(aux3))], [])
+                     for j in range(len(aux3[i]))]
+                    for i in range(len(aux3))], [])
         aux3 = self.math._tallyWithMultiplicity(aux3)
         return [plesthysmFields, aux3]
 
@@ -1411,8 +1413,10 @@ class LieAlgebra(object):
         aux = self._dominantWeights(rep)
         aux = [((el[0] * n).tolist()[0], el[1]) for el in aux]
         result = [[self._vdecomp(aux[i][0]), aux[i][1]] for i in range(len(aux))]
-        result = [[result[i][0][j][0], result[i][0][j][1] * result[i][1]] for j in range(len(result[i][0])) for i in
-                  range(len(result))]
+        result = [[[result[i][0][j][0], result[i][0][j][1] * result[i][1]]
+                     for j in range(len(result[i][0]))]
+                     for i in range(len(result))]
+        result = sum(result, [])
         return result
 
     def _vdecomp(self, dominantWeight):
@@ -1433,7 +1437,8 @@ class LieAlgebra(object):
                         prov[j][1] = 0
                     elif prov[j][0][weylWord[i] - 1] <= -2:
                         prov[j][1] = - prov[j][1]
-                        prov[j][0] = [prov[j][0][0] - (prov[j][0][weylWord[i] - 1] + 1) * self.cm[weylWord[i] - 1]]
+                        prov[j][0] = Matrix([prov[j][0]]) - int((prov[j][0][weylWord[i] - 1] + 1)) * self.cm[weylWord[i] - 1, :]
+        prov = [[list(el[0]), el[1]] for el in prov]
         prov = [el for el in prov if not (el[1] == 0)]
         return prov
 
@@ -1754,7 +1759,7 @@ class MathGroup:
 
     def _tuplesWithMultiplicity(self, listoflists):
         aux1 = list(self._tuplesList(listoflists))
-        aux2 =  [reduce(operator.mul,[ell[1] for ell in el]) for el in aux1]
+        aux2 = [reduce(operator.mul, [ell[1] for ell in el]) for el in aux1]
         aux1 = [[ell[0] for ell in el] for el in aux1]
         res = zip(aux1, aux2)
         return res
