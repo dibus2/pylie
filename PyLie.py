@@ -11,6 +11,7 @@ import pudb
 import sys
 
 import time
+
 sys.path.insert(0, '/Applications/HEPtools/sympy-0.7.6')
 import numpy as np
 from sympy import *
@@ -128,6 +129,7 @@ class LieAlgebra(object):
         self._repMatrices = {}
         self._dominantWeightsStore = {}
         self._invariantsStore = {}
+        self._dimR = {}
         self.a, self.b, self.c, self.d, self.e = map(IndexedBase, ['a', 'b', 'c', 'd', 'e'])
         self.f, self.g, self.h, self.i = map(IndexedBase, ['f', 'g', 'h', 'i'])
         self._symblist = [self.a, self.b, self.c, self.d, self.e]
@@ -341,6 +343,9 @@ class LieAlgebra(object):
         """
         Returns the dimention of representation irrep
         """
+        keydimR = tuple(irrep)
+        if keydimR in self._dimR:
+            return self._dimR[keydimR]
         if not (type(irrep) == np.ndarray):
             irrep = np.array([irrep])
         delta = Rational(1, 2) * self._deltaTimes2
@@ -350,7 +355,9 @@ class LieAlgebra(object):
                              self._simpleProduct([self.proots[i - 1]], irrep + delta, self._cmID) / self._simpleProduct(
                                  [self.proots[i - 1]], [delta], self._cmID)
                              for i in range(1, len(self.proots) + 1)], axis=0)
-        return int(result)
+        result = int(result)
+        self._dimR[keydimR] = result
+        return result
 
     def _representationIndex(self, irrep):
         delta = np.ones((1, self._n), dtype=int)
@@ -446,13 +453,20 @@ class LieAlgebra(object):
         if series == "G":
             return [0]
 
-    def conjugateIrrep(self, irrep):
+    def conjugateIrrep(self, irrep, u1in=False):
         """
         returns the conjugated irrep
         """
+
+        if u1in:
+            irrep, u1 = irrep
         lbd = lambda weight, ind: self._reflectWeight(weight, ind)
         res = -reduce(lbd, [np.array([irrep])[0]] + self.longestWeylWord)
-        return res
+        if u1in:
+            u1 = - u1
+            return [res, u1]
+        else:
+            return res
 
     def _weights(self, weights):
         """
@@ -628,7 +642,7 @@ class LieAlgebra(object):
             self._repMinimalMatrices[tag] = aux1
             return aux1
 
-    def invariants(self, reps, conj=[]):
+    def invariants(self, reps, conj=[], skipSymmetrize=False):
         """
         Calculates the linear combinations of the components of rep1 x rep2 x ... which are invariant under the action of the group.
         These are also known as the Clebsch-Gordon coefficients.
@@ -694,28 +708,70 @@ class LieAlgebra(object):
             invs, maxinds = self._invariants4Irrep([], skey, conj)
         else:
             exit("Error, only 2, 3 or 4 irrep should be passed.")
-        # TODO implement a tensor expression
-        coeffs = [el.as_coefficients_dict() for el in invs]
-        for iel, el in enumerate(coeffs):
-            tpdic = {}
-            for key, val in el.items():
-                collect,fac = [], []
-                for ell in key.args:
-                    if not(type(ell) == Indexed):
-                        fac.append(ell)
-                    else:
-                        collect.append(ell.args[1])
-                tpdic[tuple(collect)] = val*reduce(operator.mul,fac,1)
-            coeffs[iel] = tpdic
-        # tensorExp = self._normalizeInvariantsTensor([reps[i] if not(cjs[i]) else self.conjugateIrrep(reps[i]) for i in range(len(reps))], tensorExp)
-        invs = self._normalizeInvariants(reps, invs)
-        # TODO symmetrize the invariants
-        invs = self._symmetrizeInvariants(reps, invs, conj)
-        # restore the ordering of the representations which was changed above
+        if not(skipSymmetrize):
+            tensorExp = [el.as_coefficients_dict() for el in invs]
+            for iel, el in enumerate(tensorExp):
+                tpdic = {}
+                for key, val in el.items():
+                    collect, fac = [], []
+                    for ell in key.args:
+                        if not (type(ell) == Indexed):
+                            fac.append(ell)
+                        else:
+                            collect.append(ell.args[1])
+                    tpdic[tuple(collect)] = val * reduce(operator.mul, fac, 1)
+                tensorExp[iel] = tpdic
+            repDims = sqrt(reduce(operator.mul, [self.dimR(el) for el in
+                                                 [reps[i] if not (conj[i]) else self.conjugateIrrep(reps[i]) for i in
+                                                  range(len(reps))]], 1))
+            tensorExp = self._normalizeInvariantsTensor(tensorExp, repDims)
+            # create a matrix form of the tensor for the following
+            tensorMatForm = self._getTensorMatrixForm(tensorExp, maxinds)
+            # No need anymore since it is reconstructed from the tensor form
+            # invs = self._normalizeInvariants(reps, invs, repDims)
+            pudb.set_trace()
+            tensorMatForm = self._symmetrizeInvariants(skey, tensorExp, tensorMatForm, maxinds, conj)
+            if tensorMatForm != []:
+                tensorExp = [dict([(tuple([ell+1 for ell in el]), tensorMatForm[tuple(flatten([iell, el]))])
+                                   for el in zip(*tensorMatForm[iell,:].nonzero())])
+                                   for iell in range(tensorMatForm.shape[0])]
+                invs = self._reconstructFromTensor(tensorExp, maxinds)
+            else:
+                invs = []
+            # restore the ordering of the representations which was changed above
         subsdummy = [(self._symblist[i], self._symbdummy[i]) for i in range(len(subs))]
         invs = [el.subs(tuple(subsdummy)) for el in invs]
         invs = [el.subs(tuple(subs)) for el in invs]
         self._invariantsStore[key] = invs
+        return invs
+
+    def _getTensorMatrixForm(self, tensor, maxinds):
+        tensorMat = np.zeros([len(tensor)] + maxinds, dtype=object)
+        for iel, el in enumerate(tensor):
+            for key, val in el.items():
+                if len(key) == 2:
+                    tensorMat[iel, key[0] - 1, key[1] - 1] = val
+                elif len(key) == 3:
+                    tensorMat[iel, key[0] - 1, key[1] - 1, key[2] - 1] = val
+                elif len(key) == 4:
+                    tensorMat[iel, key[0] - 1, key[1] - 1, key[2] - 1, key[3] - 1] = val
+                else:
+                    exit("error in `getTensorMatrixForm")
+        return tensorMat
+
+    def _reconstructFromTensor(self, tensor, inds):
+        invs = []
+        for el in tensor:
+            exp = 0
+            for key, val in el.items():
+                if len(key) == 2:
+                    exp += self._symblist[0][key[0]] * self._symblist[1][key[1]] * val
+                elif len(key) == 3:
+                    exp += self._symblist[0][key[0]] * self._symblist[1][key[1]] * self._symblist[2][key[2]] * val
+                elif len(key) == 4:
+                    exp += self._symblist[0][key[0]] * self._symblist[1][key[1]] * self._symblist[2][key[2]] * \
+                           self._symblist[3][key[3]] * val
+            invs.append(exp)
         return invs
 
     def _invariants2Irrep(self, reps, cjs):
@@ -1018,7 +1074,7 @@ class LieAlgebra(object):
         """
         result = []
         if len(reps) == 3:
-            aux1 = self.invariants(reps, cjs)
+            aux1 = self.invariants(reps, cjs, skipSymmetrize=True)
             subs = tuple([(self.a, self._symblist[len(otherStuff)]),
                           (self.b, self._symblist[1 + len(otherStuff)]),
                           (self.c, self._symblist[2 + len(otherStuff)]),
@@ -1075,7 +1131,7 @@ class LieAlgebra(object):
         """
         if cjs == []:
             cjs = [False] * len(reps)
-        aux = self.invariants(reps, cjs)
+        aux = self.invariants(reps, cjs, skipSymmetrize=True)
         vector = reduce(lambda x, y: x.union(y), [el.find(self.c[self.p]) for el in aux])
         vector = sorted(list(vector), key=lambda x: x.args[1])
         aux = [[el.coeff(ell) for ell in vector] for el in aux]
@@ -1099,28 +1155,140 @@ class LieAlgebra(object):
                 exp = exp.replace(self._symbdummy[0][iel], new)
         return exp
 
-    def _symmetrizeInvariants(self, reps, invs, cjs):
-        #  TODO
-        pudb.set_trace()
-        return invs
+    def _symmetrizeInvariants(self, reps, invs, tensor, maxinds, cjs):
+        if invs == []:
+            return []
+        aux1 = []
+        for el in reps:
+            if not (el in aux1):
+                aux1.append(el)
+        aux2 = [[ix for ix, x in enumerate(reps) if x == y] for y in aux1]
+        cjs = np.array(cjs)
+        # collect the position of the False and True cjs
+        aux3 = [[[np.array(el)[pos] for pos in [ix for ix, x in enumerate(cjs[el]) if x]],
+                 [np.array(el)[pos] for pos in [ix for ix, x in enumerate(cjs[el]) if not (x)]]]
+                for el in aux2]
+        fakeConjugationCharges = np.zeros(len(reps), dtype=int)
+        for i in range(len(aux3)):
+            fakeConjugationCharges[aux3[i][0]] = len(aux3[i][1])
+            fakeConjugationCharges[aux3[i][1]] = len(aux3[i][0])
+        representations = zip(reps, fakeConjugationCharges)
+        representations = [self.conjugateIrrep(representations[i], u1in=True) if cjs[i] else representations[i] for i in
+                           range(len(representations))]
+        if (len(self.math.tally(representations)) == len(representations)):
+            return tensor
+        symmetries = self.permutationSymmetryOfInvariants(representations, u1in=True)
+        # [START] Don't handle the complete invariants: just find a minimum set of entries which reveal the linear independence of the invariants
+        flattenedInvariants = tensor.reshape(len(invs), reduce(operator.mul, maxinds))
+        columns = flattenedInvariants.nonzero()[1]
+        count = 0
+        stop = False
+        maxRank = 0
+        columnsToTrack = np.array([], dtype=int)
+        while count < len(columns) and not (stop):
+            count += 1
+            aux = np.linalg.matrix_rank(flattenedInvariants[:, columns[np.append(columnsToTrack, count)]])
+            if aux > maxRank:
+                columnsToTrack = np.append(columnsToTrack, count)
+                maxRank = aux
+                stop = (aux == len(invs))
+        columnsToTrack = columns[columnsToTrack]
+        try:
+            invRef = Matrix(flattenedInvariants[:, columnsToTrack]).pinv()
+        except:
+            exit("impossible to calculate the pseudo inverse in `symmetrizeInvariants`.")
+        # [END] Don't handle the complete invariants: just find a minimum set of entries which reveal the linear independence of the invariants
+        # [START]Generate the Sn transformation matrices of the invariants under permutations of each set of equal representations
+        permuteInvs12 = np.array([], dtype=object)
+        permuteInvs12n = np.array([], dtype=object)
+        for groupOfIndicesI in range(len(symmetries[0])):
+            groupOfIndices = np.array(symmetries[0][groupOfIndicesI], dtype=int) - 1
+            if len(groupOfIndices) > 1:
+                aux = np.arange(len(representations), dtype=int)
+                aux[groupOfIndices[[0, 1]]] = aux[groupOfIndices[[0, 1]]][::-1]
+                if permuteInvs12.shape == (0,):
+                    permuteInvs12 = np.transpose(tensor, axes=np.insert(aux + 1, 0, 0)).reshape(len(invs),
+                                                                                                reduce(operator.mul,
+                                                                                                       maxinds))[:,
+                                    columnsToTrack]
+                    permuteInvs12 = permuteInvs12.reshape(1, *permuteInvs12.shape)
+                else:
+                    tp = np.transpose(tensor, axes=np.insert(aux + 1, 0, 0)).reshape(len(invs),
+                                                                                     reduce(operator.mul, maxinds))[:,
+                         columnsToTrack]
+                    permuteInvs12 = np.append(permuteInvs12, tp.reshape(1, *tp.shape), axis=0)
+                aux = np.arange(len(representations), dtype=int)
+                aux[groupOfIndices] = aux[self.math._rotateleft(groupOfIndices, 1, numpy=True)]
+                if permuteInvs12n.shape == (0,):
+                    permuteInvs12n = np.transpose(tensor, axes=np.insert(aux + 1, 0, 0)).reshape(len(invs),
+                                                                                                 reduce(operator.mul,
+                                                                                                        maxinds))[:,
+                                     columnsToTrack]
+                    permuteInvs12n = permuteInvs12n.reshape(1, *permuteInvs12n.shape)
+                else:
+                    tp = np.transpose(tensor, axes=np.insert(aux + 1, 0, 0)).reshape(len(invs),
+                                                                                     reduce(operator.mul, maxinds))[:,
+                         columnsToTrack]
+                    permuteInvs12n = np.append(permuteInvs12n, tp.reshape(1, *tp.shape), axis=0)
+        refP12 = [Matrix(el) * invRef for el in permuteInvs12]
+        refP12n = [Matrix(el) * invRef for el in permuteInvs12n]
+        # [END]Generate the Sn transformation matrices of the invariants under permutations of each set of equal representations
+        # The standardized Sn irrep generators
+        newStates = []
+        for snIrrep in symmetries[1]:
+            aux0 = []
+            for groupOfIndicesI in range(len(snIrrep[0])):
+                if len(symmetries[0][groupOfIndicesI]) > 1:
+                    ids = [eye(self.Sn.snIrrepDim(el)) for el in snIrrep[0]]
+                    aux = self.Sn.snIrrepGenerators(snIrrep[0][groupOfIndicesI])
+                    aux2 = [el for el in ids]
+                    aux2[groupOfIndicesI] = aux[0]
+                    if len(symmetries[0]) > 1:
+                        aux2 = reduce(lambda x, y: np.kron(x, y), aux2)
+                    else:
+                        aux2 = aux2[0]
+                    aux3 = [el for el in ids]
+                    aux3[groupOfIndicesI] = aux[1]
+                    if len(symmetries[0]) > 1:
+                        aux3 = reduce(lambda x, y: np.kron(x, y), aux3)
+                    else:
+                        aux3 = aux3[0]
+                    aux0.append([aux2, aux3])
+            aux4 = [np.transpose(np.kron(x, y)) for x, y in zip([ell[0] for ell in aux0], refP12)]
+            aux5 = [np.transpose(np.kron(x, y)) for x, y in zip([ell[1] for ell in aux0], refP12n)]
+            aux4 = aux4 + aux5
+            aux4 = sum([(el - eye(len(aux4[0]))).tolist() for el in aux4], [])
+            aux5 = sum([self.math._inverseFlatten(el, [len(aux0[0][0]), refP12[0].shape[0]])
+             #           for el in self._findNullSpace(SparseMatrix(aux4), 1)], [])
+                         for el in SparseMatrix(aux4).nullspace()], [])
+            aux5 = [Matrix(el) for el in aux5]
+            aux5 = GramSchmidt(aux5, True)
+            if newStates == []:
+                newStates = [el for el in aux5]
+            else:
+                newStates = newStates + aux5
+        newStates = np.array(newStates)
+        result = np.tensordot(newStates, tensor, axes=1)
+        return result
 
-    def _normalizeInvariants(self, representations, invs):
+    def _normalizeInvariants(self, representations, invs, repDims):
         """
          returns the invariants normalized to Sum |c_ij|^2 = Sqrt(dim(irrep1)dim(irrep2)...dim(irrepn))
         """
-        repDims = sqrt(reduce(operator.mul, [self.dimR(el) for el in representations], 1))
         for iel, el in enumerate(invs):
             norm = sum([ell.replace(self.a[self.q], 1).replace(self.b[self.q], 1).replace(self.c[self.q], 1).replace(
                 self.d[self.q], 1) ** 2 for ell in el.args])
             invs[iel] = (el / sqrt(norm) * sqrt(repDims)).expand()
-
         return invs
 
-    def _normalizeInvariantsTensor(self, representations, invariantsTensors):
+    def _normalizeInvariantsTensor(self, invariantsTensors, repDims):
         """
         normalize the invariants according to TODO
         """
-
+        for iel, inv in enumerate(invariantsTensors):
+            norm = 1 / sqrt(np.sum(np.power(inv.values(), 2))) * sqrt(repDims)
+            for key, val in inv.items():
+                inv[key] = val * norm
         return invariantsTensors
 
     def repMatrices(self, maxW):
@@ -1217,6 +1385,7 @@ class LieAlgebra(object):
             else:
                 gather[el[0]] = [el]
         aux1 = sorted(gather.values())
+
         if len(aux1) == 0:
             return eye(len(matrixIn[0]))
         preferredOrder = flatten(
@@ -1225,7 +1394,7 @@ class LieAlgebra(object):
         for iel, el in enumerate(preferredOrder):
             for ell in aux1[el]:
                 matrix[(iel, ell[1])] = ell[2]
-        matrix = SparseMatrix(iel + 1, sh[1], matrix)  # the number of columns is kept fix
+        matrix = SparseMatrix(iel + 1, sh[1], matrix) # the number of columns is kept fix
         n, n2 = matrix.shape
         v = IndexedBase('v')
         varnames = [v[i] for i in range(n2)]
@@ -1233,9 +1402,10 @@ class LieAlgebra(object):
         varSol = Matrix([varnames])
         for i in range(1, n + 1, dt):
             #  To determine the replacement rules we need to create a system of linear equations
-            sys = matrix[i - 1:min(i + dt, n), :]
+            sys = matrix[i - 1:min(i + dt -1, n), :]
             sys = sys.col_insert(sh[1] + 1, zeros(sys.shape[0], 1))
             res = solve_linear_system(sys, *varSol.tolist()[0])
+            res = self._simplify_res_solve_linear_system(res, v)
             #  substitute the solution
             varSol = varSol.subs(res)
         # now we need to extract the vector again
@@ -1254,6 +1424,19 @@ class LieAlgebra(object):
                     tp = tp.subs(v[ell], 0)
             res.append(tp)
         return res
+
+    def _simplify_res_solve_linear_system(self, res, symb):
+        # simplifies res
+        lhs, rhs = res.items()[0]
+        vs = lhs.find(symb[self.p])
+        if len(vs) != 1:
+            lhsargs = (lhs-rhs).args
+            smallest_v = sorted([el.args[1] for el in list(vs)])
+            lhs_factor = lhsargs[0].match(symb[smallest_v[0]]*self.p)[self.p]
+            rhs = (-lhsargs[1]*1/lhs_factor).expand()
+            return {symb[smallest_v[0]]: rhs}
+        else:
+            return res
 
     def dynkinIndex(self, rep):
         """
@@ -1312,7 +1495,7 @@ class LieAlgebra(object):
         result = [el for el in result if el[1] != 0]
         return result
 
-    def permutationSymmetryOfInvariants(self, listofreps):
+    def permutationSymmetryOfInvariants(self, listofreps, u1in=False):
         """
         Computes how many invariant combinations there are in the product of the representations of the gauge group
          provided, together with the information on how these invariants change under a permutation of the representations
@@ -1322,16 +1505,17 @@ class LieAlgebra(object):
         :param listofreps:
         :return:
         """
-        indices, invariants = self._permutationSymmetryOfInvariantsProductParts(listofreps)
+        indices, invariants = self._permutationSymmetryOfInvariantsProductParts(listofreps, u1in=u1in)
         invariants = [el for el in invariants if np.all(np.array(el[0][0]) * 0 == np.array(el[0][0]))]
         invariants = [[el[0][1], el[1]] for el in invariants]
         return [indices, invariants]
 
-    def _permutationSymmetryOfInvariantsProductParts(self, listofreps):
+    def _permutationSymmetryOfInvariantsProductParts(self, listofreps, u1in=False):
         """
         This calculates the Plethysms in a tensor product of different fields/representations *)
         """
-        listofreps = [[el] for el in listofreps]
+        if not (u1in):
+            listofreps = [[el] for el in listofreps]
         aux1 = self.math.tally(listofreps)
         plesthysmFields = [[i + 1 for i, el in enumerate(listofreps) if el == ell[0]] for ell in aux1]
         aux2 = [self._permutationSymmetryOfInvariantsProductPartsAux(aux1[i][0], aux1[i][1]) for i in range(len(aux1))]
@@ -1406,8 +1590,8 @@ class LieAlgebra(object):
         aux = [((el[0] * n).tolist()[0], el[1]) for el in aux]
         result = [[self._vdecomp(aux[i][0]), aux[i][1]] for i in range(len(aux))]
         result = [[[result[i][0][j][0], result[i][0][j][1] * result[i][1]]
-                     for j in range(len(result[i][0]))]
-                     for i in range(len(result))]
+                   for j in range(len(result[i][0]))]
+                  for i in range(len(result))]
         result = sum(result, [])
         return result
 
@@ -1429,7 +1613,8 @@ class LieAlgebra(object):
                         prov[j][1] = 0
                     elif prov[j][0][weylWord[i] - 1] <= -2:
                         prov[j][1] = - prov[j][1]
-                        prov[j][0] = Matrix([prov[j][0]]) - int((prov[j][0][weylWord[i] - 1] + 1)) * self.cm[weylWord[i] - 1, :]
+                        prov[j][0] = Matrix([prov[j][0]]) - int((prov[j][0][weylWord[i] - 1] + 1)) * self.cm[
+                                                                                                     weylWord[i] - 1, :]
         prov = [[list(el[0]), el[1]] for el in prov]
         prov = [el for el in prov if not (el[1] == 0)]
         return prov
@@ -1564,7 +1749,7 @@ class Sn:
         Returns True if tab is a standard tableau i.e. it grows on each line and each columns
         """
         transpose = self._transposeTableaux(tab)
-        return all([self._issorted(el) for el in tab] + [self._issorted(el) for el in transpose])
+        return all([self.math._issorted(el) for el in tab] + [self.math._issorted(el) for el in transpose])
 
     def _transposeTableaux(self, tab):
         """
@@ -1668,6 +1853,15 @@ class Sn:
                 counter1s += 1
         return [el for el in result if el != 0]
 
+    def snIrrepDim(self, partition):
+        n1 = partition[0]
+        n2 = len(partition)
+        inverseP = [len([x for x in partition if x >= el]) for el in range(1, n1 + 1)]
+        result = [max([partition[j - 1] + inverseP[i - 1] - (j - 1) - (i - 1) - 1, 1]) for j in range(1, n2 + 1) for i
+                  in range(1, n1 + 1)]
+        result = factorial(sum(partition)) / reduce(operator.mul, result)
+        return result
+
 
 class MathGroup:
     def __init__(self):
@@ -1712,10 +1906,8 @@ class MathGroup:
         res = []
         llistcp = cp.deepcopy(llist)
         while len(llistcp) >= llen:
-            print(llistcp)
             res.append(llistcp[:llen])
             llistcp = llistcp[llen:]
-        print(res, llist, llen)
         return res
 
     def _inverseFlatten(self, flattenedList, dims):
@@ -1732,8 +1924,11 @@ class MathGroup:
                 break
         return pos
 
-    def _rotateleft(self, llist, n):
-        return llist[n:] + llist[:n]
+    def _rotateleft(self, llist, n, numpy=False):
+        if not (numpy):
+            return llist[n:] + llist[:n]
+        else:
+            return np.append(llist[n:], llist[:n])
 
     def _issorted(self, llist):
         # returns wether a list is sorted
