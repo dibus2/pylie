@@ -753,35 +753,17 @@ class LieAlgebra(object):
     def _pyrate_normalization(self, tensor):
         # It turns out that the sqrt factors are not simplified away and need to be done by end.
         # For that we look at the first element in the invariant and divide by its value if it is a sqrt
-        if type(tensor[0]) == list:
-            toloop = tensor
-        else:
-            toloop = [tensor]
-            notlist = True
-        for iv, inv in enumerate(toloop):
-            if type(inv[0].values()[0]) == Mul:
-                temp = inv[0].values()[0].match(sqrt(self.p) * self.q)
+        for iv, inv in enumerate(tensor):
+            if type(inv.values()[0]) == Mul:
+                temp = inv.values()[0].match(sqrt(self.p) * self.q)
                 if not (temp is None):
-                    if notlist:
-                        tensor = [tuple(list(key) + [val / (sqrt(temp[self.p]) * temp[self.q])]) for key, val in
-                                     inv[0].items()]
-                    else:
-                        tensor[iv] = [tuple(list(key) + [val / (sqrt(temp[self.p]) * temp[self.q])]) for key, val
-                                         in inv.items()]
+                    tensor[iv] = [tuple(list(key) + [val / (sqrt(temp[self.p]) * temp[self.q])]) for key, val in
+                                     inv.items()]
                 else:  # If if is none it means it is a complicated ratio but without sqrt or the sqrt is on a different entry. In any case normalize
-                    if notlist:
-
-                        tensor = [tuple(list(key) + [val / inv[0].values()[0]]) for key, val in
-                                     inv[0].items()]
-                    else:
-                        tensor[iv] = [tuple(list(key) + [val / inv[0].values()[0]]) for key, val
-                                         in inv.items()]
+                    tensor[iv] = [tuple(list(key) + [val / inv.values()[0]]) for key, val in
+                                     inv.items()]
             else:
-                if notlist:
-                    tensor = [tuple(list(key) + [val]) for key, val in
-                                     inv[0].items()]
-                else:
-                    tensor[iv] = [tuple(list(key) + [val]) for key, val
+                tensor[iv] = [tuple(list(key) + [val]) for key, val
                                   in inv.items()]
         return tensor
 
