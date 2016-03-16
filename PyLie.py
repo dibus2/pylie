@@ -297,6 +297,7 @@ class LieAlgebra(object):
                     tp.append(el)
             listw = [np.array([el], dtype=int) for el in tp]
             counter += 1
+
         # need to sort listw
         def sortList(a, b):
             tp1 = list(np.dot(-(a - b), self.ncminv)[0])
@@ -395,6 +396,7 @@ class LieAlgebra(object):
         """
         reap = []
         self._repsUpToDimNAuxMethod(np.zeros((1, self._n))[0], 0, maxdim, reap)
+
         # sort the list according to dimension
         def sortByDimension(a, b):
             dma, dmb = self.dimR(a), self.dimR(b)
@@ -589,11 +591,12 @@ class LieAlgebra(object):
                 if cho.shape == (0,):
                     aux3 = np.array([[0]])
                 else:
-                    if aux1 - cho.shape[0] == 0 and aux2-cho.shape[1] == 0:
-                       aux3 = cp.copy(cho)
+                    if aux1 - cho.shape[0] == 0 and aux2 - cho.shape[1] == 0:
+                        aux3 = cp.copy(cho)
                     else:
-                       aux3 = np.pad(cho, pad_width=((0, max(aux1 - cho.shape[0], 0)), (0, max(aux2 - cho.shape[1], 0))),
-                                  mode='constant')
+                        aux3 = np.pad(cho,
+                                      pad_width=((0, max(aux1 - cho.shape[0], 0)), (0, max(aux2 - cho.shape[1], 0))),
+                                      mode='constant')
                 aux4 = aux3.transpose()
                 if np.all((np.dot(aux3, aux4)) != matrix):
                     print("Error in repminimal matrices:", aux3, " ", aux4, " ", matrix)
@@ -650,7 +653,7 @@ class LieAlgebra(object):
             self._repMinimalMatrices[tag] = aux1
             return aux1
 
-    def invariants(self, reps, conj=[], skipSymmetrize=False, returnTensor=False):
+    def invariants(self, reps, conj=[], skipSymmetrize=False, returnTensor=False, pyrate_normalization=False):
         """
         Calculates the linear combinations of the components of rep1 x rep2 x ... which are invariant under the action of the group.
         These are also known as the Clebsch-Gordon coefficients.
@@ -703,9 +706,9 @@ class LieAlgebra(object):
                 invs, maxinds = self._invariants3Irrep([skey[0], skey[2], skey[1]], True)
                 # do the substitutions c->b b->c
                 invs = [self._safePermutations(el, ((self.c, self.b), (self.b, self.c))) for el in invs]
-                tp = cp.deepcopy(maxinds[0])
-                maxinds[0] = cp.deepcopy(maxinds[-1])
-                maxinds[-1] = tp
+                tp = cp.deepcopy(maxinds[1])
+                maxinds[1] = cp.deepcopy(maxinds[2])
+                maxinds[2] = tp
             if (not (conj[0]) and conj[1] and conj[2]) or (conj[0] and not (conj[1]) and not (conj[2])):
                 invs, maxinds = self._invariants3Irrep([skey[2], skey[1], skey[0]], True)
                 invs = [self._safePermutations(el, ((self.c, self.a), (self.a, self.c))) for el in invs]
@@ -716,19 +719,8 @@ class LieAlgebra(object):
             invs, maxinds = self._invariants4Irrep([], skey, conj)
         else:
             exit("Error, only 2, 3 or 4 irrep should be passed.")
-        if not(skipSymmetrize):
-            tensorExp = [el.as_coefficients_dict() for el in invs]
-            for iel, el in enumerate(tensorExp):
-                tpdic = {}
-                for key, val in el.items():
-                    collect, fac = [], []
-                    for ell in key.args:
-                        if not (type(ell) == Indexed):
-                            fac.append(ell)
-                        else:
-                            collect.append(ell.args[1])
-                    tpdic[tuple(collect)] = val * reduce(operator.mul, fac, 1)
-                tensorExp[iel] = tpdic
+        if not (skipSymmetrize):
+            tensorExp = self._construct_tensor(invs)
             repDims = sqrt(reduce(operator.mul, [self.dimR(el) for el in
                                                  [reps[i] if not (conj[i]) else self.conjugateIrrep(reps[i]) for i in
                                                   range(len(reps))]], 1))
@@ -739,21 +731,75 @@ class LieAlgebra(object):
             # invs = self._normalizeInvariants(reps, invs, repDims)
             tensorMatForm = self._symmetrizeInvariants(skey, tensorExp, tensorMatForm, maxinds, conj)
             if tensorMatForm != []:
-                tensorExp = [dict([(tuple([ell+1 for ell in el]), tensorMatForm[tuple(flatten([iell, el]))])
-                                   for el in zip(*tensorMatForm[iell,:].nonzero())])
-                                   for iell in range(tensorMatForm.shape[0])]
+                tensorExp = [dict([(tuple([ell + 1 for ell in el]), tensorMatForm[tuple(flatten([iell, el]))])
+                                   for el in zip(*tensorMatForm[iell, :].nonzero())])
+                             for iell in range(tensorMatForm.shape[0])]
                 invs = self._reconstructFromTensor(tensorExp, maxinds)
             else:
                 invs = []
-            # restore the ordering of the representations which was changed above
+                # restore the ordering of the representations which was changed above
         subsdummy = [(self._symblist[i], self._symbdummy[i]) for i in range(len(subs))]
         invs = [el.subs(tuple(subsdummy)) for el in invs]
         invs = [el.subs(tuple(subs)) for el in invs]
         self._invariantsStore[key] = invs
         if returnTensor:
+            tensorExp = self._construct_tensor(invs)
+            if pyrate_normalization:
+                tensorExp = self._pyrate_normalization(tensorExp)
             return tensorExp
         else:
             return invs
+
+    def _pyrate_normalization(self, tensor):
+        # It turns out that the sqrt factors are not simplified away and need to be done by end.
+        # For that we look at the first element in the invariant and divide by its value if it is a sqrt
+        if type(tensor[0]) == list:
+            toloop = tensor
+        else:
+            toloop = [tensor]
+            notlist = True
+        for iv, inv in enumerate(toloop):
+            if type(inv[0].values()[0]) == Mul:
+                temp = inv[0].values()[0].match(sqrt(self.p) * self.q)
+                if not (temp is None):
+                    if notlist:
+                        tensor = [tuple(list(key) + [val / (sqrt(temp[self.p]) * temp[self.q])]) for key, val in
+                                     inv[0].items()]
+                    else:
+                        tensor[iv] = [tuple(list(key) + [val / (sqrt(temp[self.p]) * temp[self.q])]) for key, val
+                                         in inv.items()]
+                else:  # If if is none it means it is a complicated ratio but without sqrt or the sqrt is on a different entry. In any case normalize
+                    if notlist:
+
+                        tensor = [tuple(list(key) + [val / inv[0].values()[0]]) for key, val in
+                                     inv[0].items()]
+                    else:
+                        tensor[iv] = [tuple(list(key) + [val / inv[0].values()[0]]) for key, val
+                                         in inv.items()]
+            else:
+                if notlist:
+                    tensor = [tuple(list(key) + [val]) for key, val in
+                                     inv[0].items()]
+                else:
+                    tensor[iv] = [tuple(list(key) + [val]) for key, val
+                                  in inv.items()]
+        return tensor
+
+    def _construct_tensor(self, invs):
+        # construct tensor form from the invariant form a[1]b[i]+...
+        tensorExp = [el.as_coefficients_dict() for el in invs]
+        for iel, el in enumerate(tensorExp):
+            tpdic = {}
+            for key, val in el.items():
+                collect, fac = [], []
+                for ell in key.args:
+                    if not (type(ell) == Indexed):
+                        fac.append(ell)
+                    else:
+                        collect.append(ell.args[1])
+                tpdic[tuple(collect)] = val * reduce(operator.mul, fac, 1)
+            tensorExp[iel] = tpdic
+        return tensorExp
 
     def _getTensorMatrixForm(self, tensor, maxinds):
         tensorMat = np.zeros([len(tensor)] + maxinds, dtype=object)
@@ -1272,8 +1318,8 @@ class LieAlgebra(object):
             aux4 = aux4 + aux5
             aux4 = sum([(el - eye(len(aux4[0]))).tolist() for el in aux4], [])
             aux5 = sum([self.math._inverseFlatten(el, [len(aux0[0][0]), refP12[0].shape[0]])
-             #           for el in self._findNullSpace(SparseMatrix(aux4), 1)], [])
-                         for el in SparseMatrix(aux4).nullspace()], [])
+                        #           for el in self._findNullSpace(SparseMatrix(aux4), 1)], [])
+                        for el in SparseMatrix(aux4).nullspace()], [])
             aux5 = [Matrix(el) for el in aux5]
             aux5 = GramSchmidt(aux5, True)
             if newStates == []:
@@ -1407,7 +1453,7 @@ class LieAlgebra(object):
         for iel, el in enumerate(preferredOrder):
             for ell in aux1[el]:
                 matrix[(iel, ell[1])] = ell[2]
-        matrix = SparseMatrix(iel + 1, sh[1], matrix) # the number of columns is kept fix
+        matrix = SparseMatrix(iel + 1, sh[1], matrix)  # the number of columns is kept fix
         n, n2 = matrix.shape
         v = IndexedBase('v')
         varnames = [v[i] for i in range(n2)]
@@ -1415,7 +1461,7 @@ class LieAlgebra(object):
         varSol = Matrix([varnames])
         for i in range(1, n + 1, dt):
             #  To determine the replacement rules we need to create a system of linear equations
-            sys = matrix[i - 1:min(i + dt -1, n), :]
+            sys = matrix[i - 1:min(i + dt - 1, n), :]
             sys = sys.col_insert(sh[1] + 1, zeros(sys.shape[0], 1))
             res = solve_linear_system(sys, *varSol.tolist()[0])
             res = self._simplify_res_solve_linear_system(res, v)
@@ -1441,14 +1487,14 @@ class LieAlgebra(object):
     def _simplify_res_solve_linear_system(self, res, symb):
         # simplifies res
         outres = {}
-        for lhs,rhs in res.items():
+        for lhs, rhs in res.items():
             if lhs != 0:
                 vs = lhs.find(symb[self.p])
                 if len(vs) != 1:
-                    lhsargs = (lhs-rhs).args
+                    lhsargs = (lhs - rhs).args
                     smallest_v = sorted([el.args[1] for el in list(vs)])
-                    lhs_factor = lhsargs[0].match(symb[smallest_v[0]]*self.p)[self.p]
-                    rhs = (-lhsargs[1]*1/lhs_factor).expand()
+                    lhs_factor = lhsargs[0].match(symb[smallest_v[0]] * self.p)[self.p]
+                    rhs = (-lhsargs[1] * 1 / lhs_factor).expand()
                     outres[symb[smallest_v[0]]] = rhs
                 else:
                     outres[lhs] = rhs
