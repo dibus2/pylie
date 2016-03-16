@@ -343,7 +343,12 @@ class LieAlgebra(object):
         """
         Returns the dimention of representation irrep
         """
-        keydimR = tuple(irrep)
+        if type(irrep) == np.ndarray and len(irrep.shape) == 1:
+            irrep = np.array([irrep])
+        if type(irrep) == np.ndarray:
+            keydimR = tuple(irrep.tolist()[0])
+        else:
+            keydimR = tuple(irrep)
         if keydimR in self._dimR:
             return self._dimR[keydimR]
         if not (type(irrep) == np.ndarray):
@@ -584,7 +589,10 @@ class LieAlgebra(object):
                 if cho.shape == (0,):
                     aux3 = np.array([[0]])
                 else:
-                    aux3 = np.pad(cho, pad_width=((0, max(aux1 - cho.shape[0], 0)), (0, max(aux2 - cho.shape[1], 0))),
+                    if aux1 - cho.shape[0] == 0 and aux2-cho.shape[1] == 0:
+                       aux3 = cp.copy(cho)
+                    else:
+                       aux3 = np.pad(cho, pad_width=((0, max(aux1 - cho.shape[0], 0)), (0, max(aux2 - cho.shape[1], 0))),
                                   mode='constant')
                 aux4 = aux3.transpose()
                 if np.all((np.dot(aux3, aux4)) != matrix):
@@ -642,7 +650,7 @@ class LieAlgebra(object):
             self._repMinimalMatrices[tag] = aux1
             return aux1
 
-    def invariants(self, reps, conj=[], skipSymmetrize=False):
+    def invariants(self, reps, conj=[], skipSymmetrize=False, returnTensor=False):
         """
         Calculates the linear combinations of the components of rep1 x rep2 x ... which are invariant under the action of the group.
         These are also known as the Clebsch-Gordon coefficients.
@@ -729,7 +737,6 @@ class LieAlgebra(object):
             tensorMatForm = self._getTensorMatrixForm(tensorExp, maxinds)
             # No need anymore since it is reconstructed from the tensor form
             # invs = self._normalizeInvariants(reps, invs, repDims)
-            pudb.set_trace()
             tensorMatForm = self._symmetrizeInvariants(skey, tensorExp, tensorMatForm, maxinds, conj)
             if tensorMatForm != []:
                 tensorExp = [dict([(tuple([ell+1 for ell in el]), tensorMatForm[tuple(flatten([iell, el]))])
@@ -743,7 +750,10 @@ class LieAlgebra(object):
         invs = [el.subs(tuple(subsdummy)) for el in invs]
         invs = [el.subs(tuple(subs)) for el in invs]
         self._invariantsStore[key] = invs
-        return invs
+        if returnTensor:
+            return tensorExp
+        else:
+            return invs
 
     def _getTensorMatrixForm(self, tensor, maxinds):
         tensorMat = np.zeros([len(tensor)] + maxinds, dtype=object)
@@ -1187,7 +1197,10 @@ class LieAlgebra(object):
         columnsToTrack = np.array([], dtype=int)
         while count < len(columns) and not (stop):
             count += 1
-            aux = np.linalg.matrix_rank(flattenedInvariants[:, columns[np.append(columnsToTrack, count)]])
+            try:
+                aux = np.linalg.matrix_rank(flattenedInvariants[:, columns[np.append(columnsToTrack, count)]])
+            except TypeError:
+                aux = Matrix(flattenedInvariants[:, columns[np.append(columnsToTrack, count)]]).rank()
             if aux > maxRank:
                 columnsToTrack = np.append(columnsToTrack, count)
                 maxRank = aux
@@ -1309,7 +1322,7 @@ class LieAlgebra(object):
             maxW = np.array([maxW])
         rep = self.repMinimalMatrices(maxW)
         dimG = 2 * len(self.proots) + len(self.ncm)
-        dimR = self.dimR(maxW)
+        dimR = self.dimR(maxW.tolist()[0])
         sR = Rational(self.casimir(self._tolist(maxW)) * dimR, dimG)
         if dimR == 1:
             #  Trivial representation, the matrices are null
@@ -1427,16 +1440,21 @@ class LieAlgebra(object):
 
     def _simplify_res_solve_linear_system(self, res, symb):
         # simplifies res
-        lhs, rhs = res.items()[0]
-        vs = lhs.find(symb[self.p])
-        if len(vs) != 1:
-            lhsargs = (lhs-rhs).args
-            smallest_v = sorted([el.args[1] for el in list(vs)])
-            lhs_factor = lhsargs[0].match(symb[smallest_v[0]]*self.p)[self.p]
-            rhs = (-lhsargs[1]*1/lhs_factor).expand()
-            return {symb[smallest_v[0]]: rhs}
-        else:
-            return res
+        outres = {}
+        for lhs,rhs in res.items():
+            if lhs != 0:
+                vs = lhs.find(symb[self.p])
+                if len(vs) != 1:
+                    lhsargs = (lhs-rhs).args
+                    smallest_v = sorted([el.args[1] for el in list(vs)])
+                    lhs_factor = lhsargs[0].match(symb[smallest_v[0]]*self.p)[self.p]
+                    rhs = (-lhsargs[1]*1/lhs_factor).expand()
+                    outres[symb[smallest_v[0]]] = rhs
+                else:
+                    outres[lhs] = rhs
+            else:
+                outres[lhs] = rhs
+        return outres
 
     def dynkinIndex(self, rep):
         """
