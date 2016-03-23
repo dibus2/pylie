@@ -12,26 +12,24 @@ import sys
 import copy
 
 # 1 load the pickle file with the data base
-# db = pickle.load(file('/Users/florian/Documents/work/Projects/Pyrate/git/pyrate/Source/GroupTheory/CGCs-1.2.1-sparse.pickle','r'))
-db = pickle.load(file('db-su2.pickle', 'r'))
+db = pickle.load(file('/Users/florian/Documents/work/Projects/Pyrate/git/pyrate/Source/GroupTheory/CGCs-1.2.1-sparse.pickle','r'))
+#db = pickle.load(file('db-su2.pickle', 'r'))
 
-GroupToCheck = ['SU2']
-AttributeToCheck = ['Quartic', 'Trilinear', 'Quartic']  # , 'Casimir', 'Dynkin']
+GroupToCheck = ['SU3']#, 'SU3', 'SU4', 'SU5']
+AttributeToCheck = ['Bilinear', 'Trilinear', 'Quartic']  # , 'Casimir', 'Dynkin']
 res = pd.DataFrame({'irreps': [], 'match': [], 'error': [], 'attribute': [], 'group': [], 'res_pylie': [], 'res_db': [],
-                    'sign': [], 'key_match': [], 'AfterRenorm': []})
+                    'sign': [], 'key_match': [], 'AfterRenorm': [], 'BeforeRenorm': []})
 
 for gg in GroupToCheck:
     if gg in db:
         # Declare a LieAlgebra object
-        lie = LieAlgebra(CartanMatrix("SU", 2))
+        lie = LieAlgebra(CartanMatrix("SU", int(gg[-1])))
         for attribute in AttributeToCheck:
             # collect all the keys
             if attribute in AttributeToCheck[:3]:
                 for irreps, val in db[gg][attribute].items():
                     # calculate the corresponding invariant using PyLie
                     try:
-                        if irreps ==((1,), (3, True), (1, True), (1, True)):
-                            pudb.set_trace()
                         invs = lie.invariants([[ell for ell in el if not type(ell) == bool] for el in irreps],
                                               conj=[el[-1] if type(el[-1]) == bool else False for el in irreps],
                                               returnTensor=True, pyrate_normalization=True)
@@ -65,10 +63,7 @@ for gg in GroupToCheck:
                                     check = set(val).difference(invs_set[-1]) == set([])
                             validate.append(check)
                         if not (all(validate)):
-                            if type(val[0]) == list:
-                                to_store = [set(ell) for ell in val]
-                            else:
-                                to_store = val
+                            to_store = copy.deepcopy(val)
                             res = res.append(
                                 {'irreps': irreps, 'match': all(validate), 'attribute': attribute, 'group': gg,
                                  'res_pylie': invs_set, 'res_db': to_store, 'sign': signs},
@@ -83,44 +78,52 @@ for gg in GroupToCheck:
                         res = res.append({'irreps': irreps, 'match': False, 'error': sys.exc_info()[1][0],
                                           'attribute': attribute, 'group': gg},
                                          ignore_index=True)
+
 # collect all the keys
 non_match = res[res['match'] == 0]
+res.to_hdf('comparison_first_step_su3.h5', 'before checking the key and normalization')
 for el in non_match.index:
     py = non_match.loc[el]['res_pylie']
     db = non_match.loc[el]['res_db']
-    assert len(py) == 1
     # construct dictionary
-    outpy, outdb = {}, {}
-    for ell in py[0]:
-        outpy[ell[:-1]] = ell[-1]
-    for ell in db:
-        outdb[ell[:-1]] = ell[-1]
+    if type(db[0]) != list:
+        db = [db]
+    py = [{ell[:-1]: ell[-1] for ell in elem} for elem in py]
+    db = [{ell[:-1]: ell[-1] for ell in elem} for elem in db]
     # check that the keys are the same
-    if not (set(outpy.keys()).difference(set(outdb.keys())) == set([])):
-        res.loc[el, 'key_match'] = False
-    else:
-        res.loc[el, 'key_match'] = True
-        # If that's the case renormalize then according to any key
-        key, val = outdb.items()[0]
-        ratio = outpy[key] / val
-        for kk, vv in outpy.items():
-            # renormalize
-            outpy[kk] = vv / ratio
-        # now check again if they are the same
-        check = True
-        for kk, vv in outdb.items():
-            if not vv == outpy[kk]:
-                check = False
-                beak
-        if check:
-            res.loc[el, 'AfterRenorm'] = True
-        else:
-            res.loc[el, 'AfterRenorm'] = False
-
+    check_keys = []
+    check_renorm = []
+    check_norenorm = []
+    for ipp, pp in enumerate(py):
+        for idd, dd in enumerate(db):
+            if set(pp.keys()).difference(set(dd.keys())) == set([]):
+                check_keys.append(True)
+                # First check without normalization
+                check = True
+                for kk, vv in pp.items():
+                    if not vv == dd[kk]:
+                        check_norenorm.append(False)
+                        check = False
+                        break
+                if check:
+                    check_norenorm.append(True)
+                    break
+                key, val = pp.items()[0]
+                ratio = dd[key] / val
+                check = True
+                for kk, vv in pp.items():
+                    # renormalize
+                    pp[kk] = (vv * ratio).expand()
+                    if not pp[kk] == dd[kk]:
+                        check_renorm.append(False)
+                        check = False
+                        break
+                if check:
+                    check_renorm.append(True)
+                    break
+    res.loc[el, 'key_match'] = cp.deepcopy(all(check_keys))
+    res.loc[el, 'AfterRenorm'] = cp.deepcopy(all(check_renorm))
+    res.loc[el, 'BeforeRenorm'] = cp.deepcopy(all(check_norenorm))
 # They are all the same if the following group only has two entries
-group = res.groupby(['key_match', 'match', 'AfterRenorm'])
-# indeed we are looking at 'match'==0.0 and then key_match == True and AfterRenorm ==True
-if len(group.groups.keys()) == 2 and ((True, 0.0, True) in group.groups.keys()) and not (
-    (True, 0.0, False) in group.groups.keys()):
-    print("They are all the same up to normalization")
-pudb.set_trace()
+group = res.groupby(['key_match', 'match', 'AfterRenorm', 'BeforeRenorm'])
+res.to_hdf('res_comparison_su3.h5', 'comparison_of_databases')

@@ -17,7 +17,7 @@ import numpy as np
 from sympy import *
 from sympy.combinatorics import Permutation
 
-init_printing(use_latex=True)
+# init_printing(use_latex=True)
 import copy as cp
 import operator
 import itertools
@@ -123,6 +123,7 @@ class LieAlgebra(object):
         # Sum the positive roots
         self._deltaTimes2 = self.proots.sum(axis=0)
         self.adjoint = self._getAdjoint()
+        self.fond = self._getFond()
         self.longestWeylWord = self._longestWeylWord()
         # store the matrices for speeding up multiple calls
         self._repMinimalMatrices = {}
@@ -140,6 +141,7 @@ class LieAlgebra(object):
         self.Sn = Sn()
         # create a MathGroup object for the auxiliary functions
         self.math = MathGroup()
+        self.struc = self._get_struct()
 
     def _matrixD(self):
         """
@@ -742,6 +744,8 @@ class LieAlgebra(object):
         invs = [el.subs(tuple(subsdummy)) for el in invs]
         invs = [el.subs(tuple(subs)) for el in invs]
         self._invariantsStore[key] = invs
+        if pyrate_normalization and not returnTensor:
+            returnTensor = True
         if returnTensor:
             tensorExp = self._construct_tensor(invs)
             if pyrate_normalization:
@@ -758,13 +762,13 @@ class LieAlgebra(object):
                 temp = inv.values()[0].match(sqrt(self.p) * self.q)
                 if not (temp is None):
                     tensor[iv] = [tuple(list(key) + [val / (sqrt(temp[self.p]) * temp[self.q])]) for key, val in
-                                     inv.items()]
+                                  inv.items()]
                 else:  # If if is none it means it is a complicated ratio but without sqrt or the sqrt is on a different entry. In any case normalize
                     tensor[iv] = [tuple(list(key) + [val / inv.values()[0]]) for key, val in
-                                     inv.items()]
+                                  inv.items()]
             else:
                 tensor[iv] = [tuple(list(key) + [val]) for key, val
-                                  in inv.items()]
+                              in inv.items()]
         return tensor
 
     def _construct_tensor(self, invs):
@@ -1381,7 +1385,7 @@ class LieAlgebra(object):
         listH = [reduce(operator.add, [listH[j] * aux[i, j] for j in range(self._n)]) for i in range(self._n)]
         # Up to multiplicative factors, Tz are now correct. We fix again the normalization with the trace condition
         listH = [listH[i] * (sqrt(sR) / sqrt((listH[i].multiply(listH[i])).trace())) for i in range(self._n)]
-        listTotal = [listE, listF, listH]
+        listTotal = sum([listE, listF, listH], [])
         self._repMatrices[tag] = listTotal
         return listTotal
 
@@ -1665,6 +1669,50 @@ class LieAlgebra(object):
         prov = [el for el in prov if not (el[1] == 0)]
         return prov
 
+    def _getFond(self):
+        fond = np.zeros((1, self._n), dtype=int)
+        fond[0, 0] = 1
+        return fond
+
+    def _get_struct(self):
+        # calculates the structure functions for the given Lie algebra
+        N = int(self._n)+1
+        d = N ** 2 - 1
+        W = MatrixSymbol('W', d, 1)
+        V = MatrixSymbol('V', d, 1)
+        # we need the matrix of the fundamental
+        mat_fond = self.repMatrices(self.fond.tolist()[0])
+        pudb.set_trace()
+        Vec1 = self.math.sumperso([W[i, 0] * Matrix(mat_fond[i]) for i in range(d)])
+        Vec2 = self.math.sumperso([V[i, 0] * Matrix(mat_fond[i]) for i in range(d)])
+        ResTrace = [sum([
+                            -2 * (Matrix(mat_fond[i])[j, k] * KroneckerDelta(l, m) - Matrix(mat_fond[i])[
+                                l, m] * KroneckerDelta(k, j)) * Vec1[k, l] * Vec2[m, j]
+                            for j in range(N)
+                            for k in range(N)
+                            for l in range(N)
+                            for m in range(N)
+                            if (Matrix(mat_fond[i])[j, k] * KroneckerDelta(l, m) - Matrix(mat_fond[i])[
+                l, m] * KroneckerDelta(k, j)) * Vec1[k, l] * Vec2[m, j] != 0])
+                    for i in range(d)]
+        Structures = [[[I * (el.diff(W[i, 0])).diff(V[j, 0]) for i in range(d)] for j in range(d)] for el in ResTrace]
+        Structures = np.array(Structures).reshape(d, d, d)
+        # check that the result is correct
+        Check = [
+            Matrix(mat_fond[i]) * Matrix(mat_fond[j]) - Matrix(
+                mat_fond[j]) * Matrix(mat_fond[i]) + self.math.sumperso(
+                [I * Structures[i, j, k] * Matrix(mat_fond[k])
+                 for k in range(d)])
+            for i in range(d)
+            for j in range(d)
+            ]
+        Check = all([el == zeros(N, N) for el in Check])
+        if not Check:
+            print "ERROR while determining the structure constants"
+            self.struc = []
+        else:
+            self.struc = Structures
+
 
 class Sn:
     def __init__(self):
@@ -1912,6 +1960,12 @@ class Sn:
 class MathGroup:
     def __init__(self):
         pass
+
+    def sumperso(self, listMat):
+        out = listMat[0]
+        for el in listMat[1:]:
+            out += el
+        return out
 
     def _decompositionTypeCholesky(self, matrix):
         """
