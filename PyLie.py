@@ -141,7 +141,7 @@ class LieAlgebra(object):
         self.Sn = Sn()
         # create a MathGroup object for the auxiliary functions
         self.math = MathGroup()
-        self.struc = self._get_struct()
+        self._get_struct()
 
     def _matrixD(self):
         """
@@ -1127,7 +1127,6 @@ class LieAlgebra(object):
             aux2 = otherStuff[0]
             for i in range(2, len(otherStuff) + 1):
                 # TODO this has to be tested
-                pudb.set_trace()
                 aux2 = sum(otherStuff[i - 1].subs(aux2), [])
             for el in aux1:
                 el = self._safePermutations(el, tuple(aux2)).expand()
@@ -1682,7 +1681,6 @@ class LieAlgebra(object):
         V = MatrixSymbol('V', d, 1)
         # we need the matrix of the fundamental
         mat_fond = self.repMatrices(self.fond.tolist()[0])
-        pudb.set_trace()
         Vec1 = self.math.sumperso([W[i, 0] * Matrix(mat_fond[i]) for i in range(d)])
         Vec2 = self.math.sumperso([V[i, 0] * Matrix(mat_fond[i]) for i in range(d)])
         ResTrace = [sum([
