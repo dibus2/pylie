@@ -141,7 +141,6 @@ class LieAlgebra(object):
         self.Sn = Sn()
         # create a MathGroup object for the auxiliary functions
         self.math = MathGroup()
-        self._get_struct()
 
     def _matrixD(self):
         """
@@ -731,7 +730,7 @@ class LieAlgebra(object):
             tensorMatForm = self._getTensorMatrixForm(tensorExp, maxinds)
             # No need anymore since it is reconstructed from the tensor form
             # invs = self._normalizeInvariants(reps, invs, repDims)
-            tensorMatForm = self._symmetrizeInvariants(skey, tensorExp, tensorMatForm, maxinds, conj)
+            #tensorMatForm = self._symmetrizeInvariants(skey, tensorExp, tensorMatForm, maxinds, conj)
             if tensorMatForm != []:
                 tensorExp = [dict([(tuple([ell + 1 for ell in el]), tensorMatForm[tuple(flatten([iell, el]))])
                                    for el in zip(*tensorMatForm[iell, :].nonzero())])
@@ -1129,8 +1128,9 @@ class LieAlgebra(object):
                 # TODO this has to be tested
                 aux2 = sum(otherStuff[i - 1].subs(aux2), [])
             for el in aux1:
-                el = self._safePermutations(el, tuple(aux2)).expand()
-                result.append(el)
+                for elem in aux2:
+                    tp = self._safePermutations(el, tuple(elem)).expand()
+                    result.append(tp)
             return result
 
         trueReps = [tuple(self.conjugateIrrep(el)) if cjs[iel] else el for iel, el in enumerate(reps)]
@@ -1151,9 +1151,10 @@ class LieAlgebra(object):
                           (self.c, self._symblist[2 + len(otherStuff)]),
                           (self.d, self._symblist[3 + len(otherStuff)]),
                           ])
-            aux2 = [[self._safePermutations(ell, subs) for ell in el] for el in aux2]
+            if not all([el[0] == el[1] for el in subs]):
+                aux2 = [[self._safePermutations(ell, subs) for ell in el] for el in aux2]
             aux3 = [self._symblist[len(otherStuff) + 1][el] for el in range(1, self.dimR(aux1[i]) + 1)]
-            aux2 = [(el1, el2) for el1, el2 in zip(aux3, sum(aux2, []))]
+            aux2 = [[(el1, el2) for el1, el2 in zip(aux3, elem)] for elem in aux2]
             # warning otherstuff should not be appended in this scope
             otherStuffcp = cp.deepcopy(otherStuff)
             otherStuffcp.append(aux2)
@@ -1184,16 +1185,40 @@ class LieAlgebra(object):
         all the variable into temporary ones before permuting.
         """
         # different equations in function of the type of transformation e.g b[1] -> f(i[j]), or b->c
-        if type(permutations[0][0]) == IndexedBase:
+        if type(permutations[0][0]) == IndexedBase:  # then it is of the kind a->c b->d...
             for iel, (old, new) in enumerate(permutations):
-                exp = exp.replace(old[self.p], self._symbdummy[0][iel, self.p])
+                exp = exp.subs(old, self._symbdummy[iel])
             for iel, (old, new) in enumerate(permutations):
-                exp = exp.replace(self._symbdummy[0][iel, self.p], new[self.p])
+                exp = exp.subs(self._symbdummy[iel], new)
+        elif type(permutations[0][0]) == Indexed:  # then of the type a[1] ->
+            base = []
+            indices = []
+            for el in permutations:
+                if not el[0].args[0] in base:
+                    base.append(el[0].args[0])
+            subs = tuple([(el, self._symbdummy[iel]) for iel, el in enumerate(base)])
+            exp = exp.subs(subs)
+            # construct the actual replacement rules
+            subs = dict(subs)
+            subs2 = tuple([(subs[el[0].args[0]][el[0].args[1]], el[1]) for el in permutations])
+            exp = exp.subs(subs2)
+            # subs the ones that have been changed without any reasons
+            exp = exp.subs(tuple([el[::-1] for el in subs.items()])).expand()
         else:
             for iel, (old, new) in enumerate(permutations):
                 exp = exp.replace(old, self._symbdummy[0][iel])
             for iel, (old, new) in enumerate(permutations):
                 exp = exp.replace(self._symbdummy[0][iel], new)
+        # if type(permutations[0][0]) == IndexedBase:
+        #    for iel, (old, new) in enumerate(permutations):
+        #        exp = exp.replace(old[self.p], self._symbdummy[0][iel, self.p])
+        #    for iel, (old, new) in enumerate(permutations):
+        #        exp = exp.replace(self._symbdummy[0][iel, self.p], new[self.p])
+        # else:
+        #    for iel, (old, new) in enumerate(permutations):
+        #        exp = exp.replace(old, self._symbdummy[0][iel])
+        #    for iel, (old, new) in enumerate(permutations):
+        #        exp = exp.replace(self._symbdummy[0][iel], new)
         return exp
 
     def _symmetrizeInvariants(self, reps, invs, tensor, maxinds, cjs):
@@ -1245,33 +1270,39 @@ class LieAlgebra(object):
         # [START]Generate the Sn transformation matrices of the invariants under permutations of each set of equal representations
         permuteInvs12 = np.array([], dtype=object)
         permuteInvs12n = np.array([], dtype=object)
+
         for groupOfIndicesI in range(len(symmetries[0])):
             groupOfIndices = np.array(symmetries[0][groupOfIndicesI], dtype=int) - 1
             if len(groupOfIndices) > 1:
                 aux = np.arange(len(representations), dtype=int)
                 aux[groupOfIndices[[0, 1]]] = aux[groupOfIndices[[0, 1]]][::-1]
+                perm = np.insert(aux + 1, 0, 0)
+                perm = [el[0] for el in sorted([(iel, el) for iel, el in enumerate(perm)], key=lambda x: x[1])]
                 if permuteInvs12.shape == (0,):
-                    permuteInvs12 = np.transpose(tensor, axes=np.insert(aux + 1, 0, 0)).reshape(len(invs),
-                                                                                                reduce(operator.mul,
-                                                                                                       maxinds))[:,
+                    # the permutations need to be translated from Mathematica notation
+                    permuteInvs12 = np.transpose(tensor, axes=perm).reshape(len(invs),
+                                                                            reduce(operator.mul,
+                                                                                   maxinds))[:,
                                     columnsToTrack]
                     permuteInvs12 = permuteInvs12.reshape(1, *permuteInvs12.shape)
                 else:
-                    tp = np.transpose(tensor, axes=np.insert(aux + 1, 0, 0)).reshape(len(invs),
-                                                                                     reduce(operator.mul, maxinds))[:,
+                    tp = np.transpose(tensor, axes=perm).reshape(len(invs),
+                                                                 reduce(operator.mul, maxinds))[:,
                          columnsToTrack]
                     permuteInvs12 = np.append(permuteInvs12, tp.reshape(1, *tp.shape), axis=0)
                 aux = np.arange(len(representations), dtype=int)
                 aux[groupOfIndices] = aux[self.math._rotateleft(groupOfIndices, 1, numpy=True)]
+                perm = np.insert(aux + 1, 0, 0)
+                perm = [el[0] for el in sorted([(iel, el) for iel, el in enumerate(perm)], key=lambda x: x[1])]
                 if permuteInvs12n.shape == (0,):
-                    permuteInvs12n = np.transpose(tensor, axes=np.insert(aux + 1, 0, 0)).reshape(len(invs),
-                                                                                                 reduce(operator.mul,
-                                                                                                        maxinds))[:,
+                    permuteInvs12n = np.transpose(tensor, axes=perm).reshape(len(invs),
+                                                                             reduce(operator.mul,
+                                                                                    maxinds))[:,
                                      columnsToTrack]
                     permuteInvs12n = permuteInvs12n.reshape(1, *permuteInvs12n.shape)
                 else:
-                    tp = np.transpose(tensor, axes=np.insert(aux + 1, 0, 0)).reshape(len(invs),
-                                                                                     reduce(operator.mul, maxinds))[:,
+                    tp = np.transpose(tensor, axes=perm).reshape(len(invs),
+                                                                 reduce(operator.mul, maxinds))[:,
                          columnsToTrack]
                     permuteInvs12n = np.append(permuteInvs12n, tp.reshape(1, *tp.shape), axis=0)
         refP12 = [Matrix(el) * invRef for el in permuteInvs12]
@@ -1675,7 +1706,7 @@ class LieAlgebra(object):
 
     def _get_struct(self):
         # calculates the structure functions for the given Lie algebra
-        N = int(self._n)+1
+        N = int(self._n) + 1
         d = N ** 2 - 1
         W = MatrixSymbol('W', d, 1)
         V = MatrixSymbol('V', d, 1)
@@ -1708,8 +1739,10 @@ class LieAlgebra(object):
         if not Check:
             print "ERROR while determining the structure constants"
             self.struc = []
+            return []
         else:
             self.struc = Structures
+            return Structures
 
 
 class Sn:

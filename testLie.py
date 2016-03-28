@@ -221,8 +221,11 @@ Sn = Sn()
 #ALie.invariants([[2], [2]], conj=[False, True], returnTensor=True)
 # res = ALie.invariants([[2], [2], [2], [2]], conj=[False, False, False, True])
 # cres = BLie.invariants([[1,1],[1,1],[1,0],[0,1]])
-res = ALie.invariants([[3], [3], [3], [3]], conj=[False, True, True, True], returnTensor=False, pyrate_normalization=True)
+res = BLie.invariants([[1, 1]]*4, conj=[False]*4, returnTensor=False, pyrate_normalization=False)
+
+pudb.set_trace()
+#
+#res = ALie.invariants([[3], [3], [3], [3]], conj=[False, True, True, True], returnTensor=False, pyrate_normalization=True)
 pudb.set_trace()
 res = SU5.invariants([[1, 0, 0, 0], [0, 0, 0, 1], [1, 0, 0, 0], [0, 0, 0, 1]])
-print(res)
 print(res)
