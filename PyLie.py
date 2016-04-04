@@ -7,7 +7,6 @@ several irrep.
 It is a python implementation of the Susyno group method.
 """
 
-import pudb
 import sys
 
 import time
@@ -720,25 +719,27 @@ class LieAlgebra(object):
             invs, maxinds = self._invariants4Irrep([], skey, conj)
         else:
             exit("Error, only 2, 3 or 4 irrep should be passed.")
+        repDims = sqrt(reduce(operator.mul, [self.dimR(el) for el in
+                                             [reps[i] if not (conj[i]) else self.conjugateIrrep(reps[i]) for i in
+                                              range(len(reps))]], 1))
         if not (skipSymmetrize):
             tensorExp = self._construct_tensor(invs)
-            repDims = sqrt(reduce(operator.mul, [self.dimR(el) for el in
-                                                 [reps[i] if not (conj[i]) else self.conjugateIrrep(reps[i]) for i in
-                                                  range(len(reps))]], 1))
-            tensorExp = self._normalizeInvariantsTensor(tensorExp, repDims)
+            #tensorExp = self._normalizeInvariantsTensor(tensorExp, repDims)
             # create a matrix form of the tensor for the following
             tensorMatForm = self._getTensorMatrixForm(tensorExp, maxinds)
-            # No need anymore since it is reconstructed from the tensor form
-            # invs = self._normalizeInvariants(reps, invs, repDims)
-            #tensorMatForm = self._symmetrizeInvariants(skey, tensorExp, tensorMatForm, maxinds, conj)
+            tensorMatForm = self._symmetrizeInvariants(skey, tensorExp, tensorMatForm, maxinds, conj)
             if tensorMatForm != []:
                 tensorExp = [dict([(tuple([ell + 1 for ell in el]), tensorMatForm[tuple(flatten([iell, el]))])
                                    for el in zip(*tensorMatForm[iell, :].nonzero())])
                              for iell in range(tensorMatForm.shape[0])]
+                # It seams that the normalization can get lost ni the symmetrize function
+                tensorExp = self._normalizeInvariantsTensor(tensorExp, repDims)
                 invs = self._reconstructFromTensor(tensorExp, maxinds)
             else:
                 invs = []
                 # restore the ordering of the representations which was changed above
+        else:
+            invs = self._normalizeInvariants(reps, invs, repDims)
         subsdummy = [(self._symblist[i], self._symbdummy[i]) for i in range(len(subs))]
         invs = [el.subs(tuple(subsdummy)) for el in invs]
         invs = [el.subs(tuple(subs)) for el in invs]
@@ -1083,13 +1084,13 @@ class LieAlgebra(object):
             b3[self._nptokey(w3[i][0])] = dim3[i]
 
         result = []
+        aind, bind, cind = [], [], []
         if len(bigMatrix) != 0:
             dt = 100 if len(bigMatrix) < 10000 else 500
             aux4 = self._findNullSpace(bigMatrix, dt)
             # let's construct the invariant combination from the null space solution
             # declare the symbols for the output of the invariants
             expr = []
-            aind, bind, cind = [], [], []
             for i0 in range(len(aux4)):
                 expr.append(0)
                 cont = 0
@@ -1107,7 +1108,10 @@ class LieAlgebra(object):
                                             1 + b3[self._nptokey(aux1[i][2])] + j3]
                         expr[i0] += aux2
             result = [expr[ii] for ii in range(len(aux4))]
-        return result, [max(aind), max(bind), max(cind)]
+        if aind == [] and bind == [] and cind == []:
+            return result, [0, 0, 0]
+        else:
+            return result, [max(aind), max(bind), max(cind)]
 
     def _invariants4Irrep(self, otherStuff, reps, cjs):
         """
@@ -1244,10 +1248,16 @@ class LieAlgebra(object):
         if (len(self.math.tally(representations)) == len(representations)):
             return tensor
         symmetries = self.permutationSymmetryOfInvariants(representations, u1in=True)
+        ####
+        # START DEBUG
+        #
+        #symmetries = [[[1, 2, 3]], [[[(3,)], 1], [[(1, 1, 1)],1]]]
+        #END DEBUG
+        ####
         # [START] Don't handle the complete invariants: just find a minimum set of entries which reveal the linear independence of the invariants
         flattenedInvariants = tensor.reshape(len(invs), reduce(operator.mul, maxinds))
         columns = flattenedInvariants.nonzero()[1]
-        count = 0
+        count = -1
         stop = False
         maxRank = 0
         columnsToTrack = np.array([], dtype=int)
@@ -1333,17 +1343,17 @@ class LieAlgebra(object):
             aux5 = [np.transpose(np.kron(x, y)) for x, y in zip([ell[1] for ell in aux0], refP12n)]
             aux4 = aux4 + aux5
             aux4 = sum([(el - eye(len(aux4[0]))).tolist() for el in aux4], [])
-            aux5 = sum([self.math._inverseFlatten(el, [len(aux0[0][0]), refP12[0].shape[0]])
+            aux4 = sum([self.math._inverseFlatten(el, [len(aux0[0][0]), refP12[0].shape[0]])
                         #           for el in self._findNullSpace(SparseMatrix(aux4), 1)], [])
-                        for el in SparseMatrix(aux4).nullspace()], [])
-            aux5 = [Matrix(el) for el in aux5]
-            aux5 = GramSchmidt(aux5, True)
+                        for el in SparseMatrix(aux4).nullspace(simplify=True)], [])
+            aux4 = [Matrix(el) for el in aux4]
+            aux4 = GramSchmidt(aux4, True)
             if newStates == []:
-                newStates = [el for el in aux5]
+                newStates = [el for el in aux4]
             else:
-                newStates = newStates + aux5
+                newStates = newStates + aux4
         newStates = np.array(newStates)
-        result = np.tensordot(newStates, tensor, axes=1)
+        result = np.tensordot(newStates, tensor, axes=[1, 0])
         return result
 
     def _normalizeInvariants(self, representations, invs, repDims):
