@@ -219,9 +219,9 @@ print("Check the Sn")
 Sn = Sn()
 #SU5.invariants([[1, 1, 0, 0], [0, 0, 1, 1]], conj=[False, False])[0]
 #ALie.invariants([[2], [2]], conj=[False, True], returnTensor=True)
-# res = ALie.invariants([[2], [2], [2], [2]], conj=[False, False, False, True])
+res = ALie.invariants([[1], [1], [1], [1]], conj=[False, False, False, True])
 #res = BLie.invariants([[1,1],[1,1],[1,1]])
-res = BLie.invariants([[1,1],[1,1],[1,1]], returnTensor=False, pyrate_normalization=False,skipSymmetrize=False)
+res = BLie.invariants([[1,1],[1,1],[1,1],[1,1]], returnTensor=False, pyrate_normalization=False,skipSymmetrize=False)
 #res = ALie.invariants([[3], [2], [1], [2]], conj=[False]*4, returnTensor=False, pyrate_normalization=False)
 #
 #res = ALie.invariants([[3], [3], [3], [3]], conj=[False, True, True, True], returnTensor=False, pyrate_normalization=True)

@@ -7,6 +7,7 @@ several irrep.
 It is a python implementation of the Susyno group method.
 """
 
+import pudb
 import sys
 
 import time
@@ -727,12 +728,13 @@ class LieAlgebra(object):
             #tensorExp = self._normalizeInvariantsTensor(tensorExp, repDims)
             # create a matrix form of the tensor for the following
             tensorMatForm = self._getTensorMatrixForm(tensorExp, maxinds)
+            tensorMatForm = self._normalizeInvariantsTensorMat(tensorMatForm, repDims)
             tensorMatForm = self._symmetrizeInvariants(skey, tensorExp, tensorMatForm, maxinds, conj)
             if tensorMatForm != []:
                 tensorExp = [dict([(tuple([ell + 1 for ell in el]), tensorMatForm[tuple(flatten([iell, el]))])
                                    for el in zip(*tensorMatForm[iell, :].nonzero())])
                              for iell in range(tensorMatForm.shape[0])]
-                # It seams that the normalization can get lost ni the symmetrize function
+                # It seams that the normalization can get lost in the symmetrize function
                 tensorExp = self._normalizeInvariantsTensor(tensorExp, repDims)
                 invs = self._reconstructFromTensor(tensorExp, maxinds)
             else:
@@ -1366,10 +1368,25 @@ class LieAlgebra(object):
             invs[iel] = (el / sqrt(norm) * sqrt(repDims)).expand()
         return invs
 
+    def _normalizeInvariantsTensorMat(self, invariantsTensors, repDims):
+        """
+        This is the final normalization directly on the tensor in matrix form,
+        including the orthogonalization as in Susyno.
+        """
+        aux = np.array([[np.sum(invariantsTensors[i]*invariantsTensors[j])
+         for j in range(len(invariantsTensors))]
+         for i in range(len(invariantsTensors))])
+        aux = SparseMatrix(self.math._decompositionTypeCholesky(aux)).inv()
+        result = np.tensordot(aux, invariantsTensors, axes=[1, 0])
+        result = result * sqrt(repDims)
+        return result
+
+
     def _normalizeInvariantsTensor(self, invariantsTensors, repDims):
         """
-        normalize the invariants according to TODO
+        normalize the invariants according to sqrt(Prod_n Dim(rep_n)). Note that it also orthogonalize them!!
         """
+        pudb.set_trace()
         for iel, inv in enumerate(invariantsTensors):
             norm = 1 / sqrt(np.sum(np.power(inv.values(), 2))) * sqrt(repDims)
             for key, val in inv.items():
