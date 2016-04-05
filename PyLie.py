@@ -734,8 +734,6 @@ class LieAlgebra(object):
                 tensorExp = [dict([(tuple([ell + 1 for ell in el]), tensorMatForm[tuple(flatten([iell, el]))])
                                    for el in zip(*tensorMatForm[iell, :].nonzero())])
                              for iell in range(tensorMatForm.shape[0])]
-                # It seams that the normalization can get lost in the symmetrize function
-                tensorExp = self._normalizeInvariantsTensor(tensorExp, repDims)
                 invs = self._reconstructFromTensor(tensorExp, maxinds)
             else:
                 invs = []
@@ -1250,12 +1248,6 @@ class LieAlgebra(object):
         if (len(self.math.tally(representations)) == len(representations)):
             return tensor
         symmetries = self.permutationSymmetryOfInvariants(representations, u1in=True)
-        ####
-        # START DEBUG
-        #
-        #symmetries = [[[1, 2, 3]], [[[(3,)], 1], [[(1, 1, 1)],1]]]
-        #END DEBUG
-        ####
         # [START] Don't handle the complete invariants: just find a minimum set of entries which reveal the linear independence of the invariants
         flattenedInvariants = tensor.reshape(len(invs), reduce(operator.mul, maxinds))
         columns = flattenedInvariants.nonzero()[1]
@@ -1356,6 +1348,7 @@ class LieAlgebra(object):
                 newStates = newStates + aux4
         newStates = np.array(newStates)
         result = np.tensordot(newStates, tensor, axes=[1, 0])
+        pudb.set_trace()
         return result
 
     def _normalizeInvariants(self, representations, invs, repDims):
