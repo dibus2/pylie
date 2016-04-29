@@ -10,13 +10,14 @@ from PyLie import *
 import pudb
 import sys
 import copy
+import gzip
 
 # 1 load the pickle file with the data base
 db = pickle.load(file('/Users/florian/Documents/work/Projects/Pyrate/git/pyrate/Source/GroupTheory/CGCs-1.2.1-sparse.pickle','r'))
 #db = pickle.load(file('db-su2.pickle', 'r'))
 
 GroupToCheck = ['SU3']#, 'SU3', 'SU4', 'SU5']
-AttributeToCheck = ['Bilinear', 'Trilinear', 'Quartic']  # , 'Casimir', 'Dynkin']
+AttributeToCheck = ['Quartic', 'Trilinear', 'Quartic']  # , 'Casimir', 'Dynkin']
 res = pd.DataFrame({'irreps': [], 'match': [], 'error': [], 'attribute': [], 'group': [], 'res_pylie': [], 'res_db': [],
                     'sign': [], 'key_match': [], 'AfterRenorm': [], 'BeforeRenorm': []})
 
@@ -26,7 +27,7 @@ for gg in GroupToCheck:
         lie = LieAlgebra(CartanMatrix("SU", int(gg[-1])))
         for attribute in AttributeToCheck:
             # collect all the keys
-            if attribute in AttributeToCheck[:3]:
+            if attribute in AttributeToCheck[:1]:
                 for irreps, val in db[gg][attribute].items():
                     # calculate the corresponding invariant using PyLie
                     try:
@@ -74,14 +75,16 @@ for gg in GroupToCheck:
                                  'sign': signs},
                                 ignore_index=True)
                     except:
-                        pudb.set_trace()
                         res = res.append({'irreps': irreps, 'match': False, 'error': sys.exc_info()[1][0],
                                           'attribute': attribute, 'group': gg},
                                          ignore_index=True)
 
 # collect all the keys
 non_match = res[res['match'] == 0]
-res.to_hdf('comparison_first_step_su3.h5', 'before checking the key and normalization')
+res.to_hdf('comparison_first_step_su3_quartic.h5', 'before checking the key and normalization')
+#with gzip.open('comparison_first_step_su2.pklz','w') as f:
+#    pickle.dump(res, f)
+#f.close()
 for el in non_match.index:
     py = non_match.loc[el]['res_pylie']
     db = non_match.loc[el]['res_db']
@@ -126,4 +129,11 @@ for el in non_match.index:
     res.loc[el, 'BeforeRenorm'] = cp.deepcopy(all(check_norenorm))
 # They are all the same if the following group only has two entries
 group = res.groupby(['key_match', 'match', 'AfterRenorm', 'BeforeRenorm'])
-res.to_hdf('res_comparison_su3.h5', 'comparison_of_databases')
+res.to_hdf('res_comparison_su2.h5', 'comparison_of_databases')
+subres = pd.DataFrame(res[['AfterRenorm','BeforeRenorm','attribute','error','group','irreps','key_match','match','sign']])
+subres.to_hdf('subres_su3_quartic.h5','sub results for su3')
+pudb.set_trace()
+#with gzip.open('res_comparison_su2.pklz','w') as f:
+#    pickle.dump(res, f)
+#f.close()
+
