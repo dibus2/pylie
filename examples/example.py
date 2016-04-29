@@ -4,7 +4,7 @@ from PyLie import *
 import pudb
 import time
 
-__authors__ = 'Florian Lyonnet'
+__author__ = 'Florian Lyonnet'
 
 """
 
