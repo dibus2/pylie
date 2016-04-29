@@ -723,36 +723,39 @@ class LieAlgebra(object):
         repDims = sqrt(reduce(operator.mul, [self.dimR(el) for el in
                                              [reps[i] if not (conj[i]) else self.conjugateIrrep(reps[i]) for i in
                                               range(len(reps))]], 1))
-        if not (skipSymmetrize):
-            tensorExp = self._construct_tensor(invs)
-            #tensorExp = self._normalizeInvariantsTensor(tensorExp, repDims)
-            # create a matrix form of the tensor for the following
-            tensorMatForm = self._getTensorMatrixForm(tensorExp, maxinds)
-            tensorMatForm = self._normalizeInvariantsTensorMat(tensorMatForm, repDims)
-            tensorMatForm = self._symmetrizeInvariants(skey, tensorExp, tensorMatForm, maxinds, conj)
-            if tensorMatForm != []:
-                tensorExp = [dict([(tuple([ell + 1 for ell in el]), tensorMatForm[tuple(flatten([iell, el]))])
-                                   for el in zip(*tensorMatForm[iell, :].nonzero())])
-                             for iell in range(tensorMatForm.shape[0])]
-                invs = self._reconstructFromTensor(tensorExp, maxinds)
+        if invs == []:
+            return []
+        else:
+            if not (skipSymmetrize):
+                tensorExp = self._construct_tensor(invs)
+                #tensorExp = self._normalizeInvariantsTensor(tensorExp, repDims)
+                # create a matrix form of the tensor for the following
+                tensorMatForm = self._getTensorMatrixForm(tensorExp, maxinds)
+                tensorMatForm = self._normalizeInvariantsTensorMat(tensorMatForm, repDims)
+                tensorMatForm = self._symmetrizeInvariants(skey, tensorExp, tensorMatForm, maxinds, conj)
+                if tensorMatForm != []:
+                    tensorExp = [dict([(tuple([ell + 1 for ell in el]), tensorMatForm[tuple(flatten([iell, el]))])
+                                       for el in zip(*tensorMatForm[iell, :].nonzero())])
+                                 for iell in range(tensorMatForm.shape[0])]
+                    invs = self._reconstructFromTensor(tensorExp, maxinds)
+                else:
+                    invs = []
+                    # restore the ordering of the representations which was changed above
             else:
-                invs = []
-                # restore the ordering of the representations which was changed above
-        else:
-            invs = self._normalizeInvariants(reps, invs, repDims)
-        subsdummy = [(self._symblist[i], self._symbdummy[i]) for i in range(len(subs))]
-        invs = [el.subs(tuple(subsdummy)) for el in invs]
-        invs = [el.subs(tuple(subs)) for el in invs]
-        self._invariantsStore[key] = invs
-        if pyrate_normalization and not returnTensor:
-            returnTensor = True
-        if returnTensor:
-            tensorExp = self._construct_tensor(invs)
-            if pyrate_normalization:
-                tensorExp = self._pyrate_normalization(tensorExp)
-            return tensorExp
-        else:
-            return invs
+                invs = self._normalizeInvariants(reps, invs, repDims)
+            subsdummy = [(self._symblist[i], self._symbdummy[i]) for i in range(len(subs))]
+            invs = [el.subs(tuple(subsdummy)) for el in invs]
+            invs = [el.subs(tuple(subs)) for el in invs]
+            self._invariantsStore[key] = invs
+            if pyrate_normalization and not returnTensor:
+                returnTensor = True
+            if returnTensor:
+                tensorExp = self._construct_tensor(invs)
+                if pyrate_normalization:
+                    tensorExp = self._pyrate_normalization(tensorExp)
+                return tensorExp
+            else:
+                return invs
 
     def _pyrate_normalization(self, tensor):
         # It turns out that the sqrt factors are not simplified away and need to be done by end.
@@ -1348,7 +1351,6 @@ class LieAlgebra(object):
                 newStates = newStates + aux4
         newStates = np.array(newStates)
         result = np.tensordot(newStates, tensor, axes=[1, 0])
-        pudb.set_trace()
         return result
 
     def _normalizeInvariants(self, representations, invs, repDims):
@@ -1379,7 +1381,6 @@ class LieAlgebra(object):
         """
         normalize the invariants according to sqrt(Prod_n Dim(rep_n)). Note that it also orthogonalize them!!
         """
-        pudb.set_trace()
         for iel, inv in enumerate(invariantsTensors):
             norm = 1 / sqrt(np.sum(np.power(inv.values(), 2))) * sqrt(repDims)
             for key, val in inv.items():
