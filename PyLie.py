@@ -12,7 +12,7 @@ import sys
 
 import time
 
-sys.path.insert(0, '/Applications/HEPtools/sympy-0.7.6')
+sys.path.insert(0, '/Applications/HEPtools/sympy-1.0')
 import numpy as np
 from sympy import *
 from sympy.combinatorics import Permutation
