@@ -7,9 +7,7 @@ several irrep.
 It is a python implementation of the Susyno group method.
 """
 
-import pudb
 import sys
-
 import time
 
 sys.path.insert(0, '/Applications/HEPtools/sympy-1.0')
@@ -21,6 +19,7 @@ from sympy.combinatorics import Permutation
 import copy as cp
 import operator
 import itertools
+import pudb
 
 
 class CartanMatrix(object):
@@ -124,6 +123,7 @@ class LieAlgebra(object):
         self._deltaTimes2 = self.proots.sum(axis=0)
         self.adjoint = self._getAdjoint()
         self.fond = self._getFond()
+        self.dimAdj = self._getDimAdj()
         self.longestWeylWord = self._longestWeylWord()
         # store the matrices for speeding up multiple calls
         self._repMinimalMatrices = {}
@@ -348,7 +348,7 @@ class LieAlgebra(object):
         if type(irrep) == np.ndarray and len(irrep.shape) == 1:
             irrep = np.array([irrep])
         if type(irrep) == np.ndarray:
-            keydimR = tuple(irrep.tolist()[0])
+            keydimR = tuple([int(el) for el in irrep.tolist()[0]])
         else:
             keydimR = tuple(irrep)
         if keydimR in self._dimR:
@@ -362,7 +362,8 @@ class LieAlgebra(object):
                              self._simpleProduct([self.proots[i - 1]], irrep + delta, self._cmID) / self._simpleProduct(
                                  [self.proots[i - 1]], [delta], self._cmID)
                              for i in range(1, len(self.proots) + 1)], axis=0)
-        result = int(result)
+
+        result = int(float(str(result)))  # there is a serious bug here I have had some 45.000 converted into 44 !
         self._dimR[keydimR] = result
         return result
 
@@ -728,7 +729,7 @@ class LieAlgebra(object):
         else:
             if not (skipSymmetrize):
                 tensorExp = self._construct_tensor(invs)
-                #tensorExp = self._normalizeInvariantsTensor(tensorExp, repDims)
+                # tensorExp = self._normalizeInvariantsTensor(tensorExp, repDims)
                 # create a matrix form of the tensor for the following
                 tensorMatForm = self._getTensorMatrixForm(tensorExp, maxinds)
                 tensorMatForm = self._normalizeInvariantsTensorMat(tensorMatForm, repDims)
@@ -1368,14 +1369,13 @@ class LieAlgebra(object):
         This is the final normalization directly on the tensor in matrix form,
         including the orthogonalization as in Susyno.
         """
-        aux = np.array([[np.sum(invariantsTensors[i]*invariantsTensors[j])
-         for j in range(len(invariantsTensors))]
-         for i in range(len(invariantsTensors))])
+        aux = np.array([[np.sum(invariantsTensors[i] * invariantsTensors[j])
+                         for j in range(len(invariantsTensors))]
+                        for i in range(len(invariantsTensors))])
         aux = SparseMatrix(self.math._decompositionTypeCholesky(aux)).inv()
         result = np.tensordot(aux, invariantsTensors, axes=[1, 0])
         result = result * sqrt(repDims)
         return result
-
 
     def _normalizeInvariantsTensor(self, invariantsTensors, repDims):
         """
@@ -1721,42 +1721,81 @@ class LieAlgebra(object):
         return prov
 
     def _getFond(self):
-        fond = np.zeros((1, self._n), dtype=int)
-        fond[0, 0] = 1
+        if self.cartan._name in ['A', 'B', 'D']:
+            fond = np.zeros((1, self._n), dtype=int)
+            fond[0, 0] = 1
+        else:
+            exit("Lie Algebra not implemented yet: `{}`".format(self.cartan._name))
         return fond
+
+    def _getDimAdj(self):
+        if self.cartan._name == 'A':
+            return (self._n + 1) ** 2 - 1
+        elif self.cartan._name == 'D':
+            return self._n * (2 * self._n - 1)
+        elif self.cartan._name == 'B':
+            return self._n * (2 * self._n + 1)
+        else:
+            exit("Not implemented yet: `{}`".format(self.cartan._name))
 
     def _get_struct(self):
         # calculates the structure functions for the given Lie algebra
-        N = int(self._n) + 1
-        d = N ** 2 - 1
+        d = self.dimAdj
         W = MatrixSymbol('W', d, 1)
         V = MatrixSymbol('V', d, 1)
         # we need the matrix of the fundamental
         mat_fond = self.repMatrices(self.fond.tolist()[0])
+        srep = self.dynkinIndex(self.fond.tolist()[0])
+        N = mat_fond[0].shape[0]
         Vec1 = self.math.sumperso([W[i, 0] * Matrix(mat_fond[i]) for i in range(d)])
         Vec2 = self.math.sumperso([V[i, 0] * Matrix(mat_fond[i]) for i in range(d)])
-        ResTrace = [sum([
-                            -2 * (Matrix(mat_fond[i])[j, k] * KroneckerDelta(l, m) - Matrix(mat_fond[i])[
+        ResTrace = []
+        for i in range(d):
+            sumterms = []
+            print(i)
+            for j in range(N):
+                for k in range(N):
+                    for l in range(N):
+                        for m in range(N):
+                            temp = (mat_fond[i][j, k] * KroneckerDelta(l, m) - mat_fond[i][
                                 l, m] * KroneckerDelta(k, j)) * Vec1[k, l] * Vec2[m, j]
-                            for j in range(N)
-                            for k in range(N)
-                            for l in range(N)
-                            for m in range(N)
-                            if (Matrix(mat_fond[i])[j, k] * KroneckerDelta(l, m) - Matrix(mat_fond[i])[
-                l, m] * KroneckerDelta(k, j)) * Vec1[k, l] * Vec2[m, j] != 0])
-                    for i in range(d)]
-        Structures = [[[I * (el.diff(W[i, 0])).diff(V[j, 0]) for i in range(d)] for j in range(d)] for el in ResTrace]
+                            if temp != 0:
+                                sumterms.append(temp)
+            ResTrace.append(sum(sumterms))
+
+        # ResTrace = [sum([
+        #                    -2 * (mat_fond[i][j, k] * KroneckerDelta(l, m) - mat_fond[i][
+        #                        l, m] * KroneckerDelta(k, j)) * Vec1[k, l] * Vec2[m, j]
+        #                    for j in range(N)
+        #                    for k in range(N)
+        #                    for l in range(N)
+        #                    for m in range(N)
+        #                    if (mat_fond[i][j, k] * KroneckerDelta(l, m) - mat_fond[i][
+        #        l, m] * KroneckerDelta(k, j)) * Vec1[k, l] * Vec2[m, j] != 0])
+        #            for i in range(d)]
+        Structures = []
+        # for iel,el in enumerate(ResTrace):
+        #    print(iel)
+        #    for j in range(d):
+        #        for i in range(d):
+        #            if el != O:
+        #                Structures.append(I * (el.diff(W[i, 0])).diff(V[j, 0]))
+        Structures = [[[-I * Rational(1, srep) * (el.diff(W[i, 0])).diff(V[j, 0]) for j in range(d)] for i in range(d)]
+                      for el in ResTrace]
         Structures = np.array(Structures).reshape(d, d, d)
         # check that the result is correct
-        Check = [
-            Matrix(mat_fond[i]) * Matrix(mat_fond[j]) - Matrix(
-                mat_fond[j]) * Matrix(mat_fond[i]) + self.math.sumperso(
-                [I * Structures[i, j, k] * Matrix(mat_fond[k])
-                 for k in range(d)])
-            for i in range(d)
-            for j in range(d)
-            ]
+        Check = []
+        for i in range(d):
+            for j in range(d):
+                temp = self.math.sumperso(
+                    [-mat_fond[k] * I * Structures[i, j, k] for k in range(d)])
+                if temp != 0:
+                    temp += mat_fond[i] * mat_fond[j] - mat_fond[j] * mat_fond[i]
+                else:
+                    temp = mat_fond[i] * mat_fond[j] - mat_fond[j] * mat_fond[i]
+                Check.append(temp)
         Check = all([el == zeros(N, N) for el in Check])
+
         if not Check:
             print "ERROR while determining the structure constants"
             self.struc = []
