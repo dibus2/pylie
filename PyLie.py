@@ -8,14 +8,12 @@ It is a python implementation of the Susyno group method.
 """
 
 import sys
-import time
 
 sys.path.insert(0, '/Applications/HEPtools/sympy-1.0')
 import numpy as np
 from sympy import *
 from sympy.combinatorics import Permutation
 
-# init_printing(use_latex=True)
 import copy as cp
 import operator
 import itertools
@@ -1752,7 +1750,6 @@ class LieAlgebra(object):
         ResTrace = []
         for i in range(d):
             sumterms = []
-            print(i)
             for j in range(N):
                 for k in range(N):
                     for l in range(N):
@@ -1763,23 +1760,6 @@ class LieAlgebra(object):
                                 sumterms.append(temp)
             ResTrace.append(sum(sumterms))
 
-        # ResTrace = [sum([
-        #                    -2 * (mat_fond[i][j, k] * KroneckerDelta(l, m) - mat_fond[i][
-        #                        l, m] * KroneckerDelta(k, j)) * Vec1[k, l] * Vec2[m, j]
-        #                    for j in range(N)
-        #                    for k in range(N)
-        #                    for l in range(N)
-        #                    for m in range(N)
-        #                    if (mat_fond[i][j, k] * KroneckerDelta(l, m) - mat_fond[i][
-        #        l, m] * KroneckerDelta(k, j)) * Vec1[k, l] * Vec2[m, j] != 0])
-        #            for i in range(d)]
-        Structures = []
-        # for iel,el in enumerate(ResTrace):
-        #    print(iel)
-        #    for j in range(d):
-        #        for i in range(d):
-        #            if el != O:
-        #                Structures.append(I * (el.diff(W[i, 0])).diff(V[j, 0]))
         Structures = [[[-I * Rational(1, srep) * (el.diff(W[i, 0])).diff(V[j, 0]) for j in range(d)] for i in range(d)]
                       for el in ResTrace]
         Structures = np.array(Structures).reshape(d, d, d)
