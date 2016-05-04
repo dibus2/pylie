@@ -12,6 +12,7 @@ import sys
 sys.path.insert(0, '/Applications/HEPtools/sympy-1.0')
 import numpy as np
 from sympy import *
+import time
 from sympy.combinatorics import Permutation
 
 import copy as cp
@@ -1088,7 +1089,7 @@ class LieAlgebra(object):
         result = []
         aind, bind, cind = [], [], []
         if len(bigMatrix) != 0:
-            dt = 100 if len(bigMatrix) < 10000 else 500
+            dt = 100 if bigMatrix.shape[0] < 10000 else 500
             aux4 = self._findNullSpace(bigMatrix, dt)
             # let's construct the invariant combination from the null space solution
             # declare the symbols for the output of the invariants
@@ -1490,22 +1491,28 @@ class LieAlgebra(object):
                 matrix[(iel, ell[1])] = ell[2]
         matrix = SparseMatrix(iel + 1, sh[1], matrix)  # the number of columns is kept fix
         n, n2 = matrix.shape
-        v = IndexedBase('v')
-        varnames = [v[i] for i in range(n2)]
-        var = Matrix([varnames])
-        varSol = Matrix([varnames])
+        #v = IndexedBase('v')
+        #varnames = [v[i] for i in range(n2)]
+        #var = Matrix([varnames])
+        #varSol = Matrix([varnames])
+        varnames = symbols('v0:{}'.format(n2))
+        var = Matrix(varnames)
+        varSol = Matrix(varnames)
         for i in range(1, n + 1, dt):
             #  To determine the replacement rules we need to create a system of linear equations
             sys = matrix[i - 1:min(i + dt - 1, n), :]
-            sys = sys.col_insert(sh[1] + 1, zeros(sys.shape[0], 1))
-            res = solve_linear_system(sys, *varSol.tolist()[0])
-            res = self._simplify_res_solve_linear_system(res, v)
-            #  substitute the solution
-            varSol = varSol.subs(res)
+            res = solve(sys*varSol, dict=True)
+            #sys = sys.col_insert(sh[1] + 1, zeros(sys.shape[0], 1))
+            #res = solve_linear_system(sys, *varSol.tolist()[0])
+            if res != []:
+                #res = self._simplify_res_solve_linear_system(res[0], v)
+                #  substitute the solution
+                varSol = varSol.subs(res[0])
         # now we need to extract the vector again
         tally = []
         for el in varSol.tolist()[0]:
-            tp = [ell.indices[0] for ell in list(el.find(v[self.p]))]
+            #tp = [ell.indices[0] for ell in list(el.find(v[self.p]))]
+            tp = [ell for ell in varnames if list(el.find(ell)) != []]
             tally.append(tp)
         tally = list(set(flatten(tally)))
         res = []
@@ -1513,9 +1520,11 @@ class LieAlgebra(object):
             tp = cp.deepcopy(varSol)
             for ell in tally:
                 if ell == el:
-                    tp = tp.subs(v[ell], 1)
+            #        tp = tp.subs(v[ell], 1)
+                    tp = tp.subs(ell, 1)
                 else:
-                    tp = tp.subs(v[ell], 0)
+                    tp = tp.subs(ell, 0)
+            #        tp = tp.subs(v[ell], 0)
             res.append(tp)
         return res
 
@@ -1719,7 +1728,7 @@ class LieAlgebra(object):
         return prov
 
     def _getFond(self):
-        if self.cartan._name in ['A', 'B', 'D']:
+        if self.cartan._name in ['A', 'B', 'D','C']:
             fond = np.zeros((1, self._n), dtype=int)
             fond[0, 0] = 1
         else:
@@ -1732,6 +1741,8 @@ class LieAlgebra(object):
         elif self.cartan._name == 'D':
             return self._n * (2 * self._n - 1)
         elif self.cartan._name == 'B':
+            return self._n * (2 * self._n + 1)
+        elif self.cartan._name == 'C':
             return self._n * (2 * self._n + 1)
         else:
             exit("Not implemented yet: `{}`".format(self.cartan._name))
