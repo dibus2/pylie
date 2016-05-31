@@ -1491,27 +1491,29 @@ class LieAlgebra(object):
                 matrix[(iel, ell[1])] = ell[2]
         matrix = SparseMatrix(iel + 1, sh[1], matrix)  # the number of columns is kept fix
         n, n2 = matrix.shape
-        #v = IndexedBase('v')
-        #varnames = [v[i] for i in range(n2)]
-        #var = Matrix([varnames])
-        #varSol = Matrix([varnames])
+        # v = IndexedBase('v')
+        # varnames = [v[i] for i in range(n2)]
+        # var = Matrix([varnames])
+        # varSol = Matrix([varnames])
         varnames = symbols('v0:{}'.format(n2))
         var = Matrix(varnames)
         varSol = Matrix(varnames)
         for i in range(1, n + 1, dt):
             #  To determine the replacement rules we need to create a system of linear equations
             sys = matrix[i - 1:min(i + dt - 1, n), :]
-            res = solve(sys*varSol, dict=True)
-            #sys = sys.col_insert(sh[1] + 1, zeros(sys.shape[0], 1))
-            #res = solve_linear_system(sys, *varSol.tolist()[0])
-            if res != []:
-                #res = self._simplify_res_solve_linear_system(res[0], v)
+            res = solve(sys*varSol, dict=True, simplify=False, check=False)
+            # sys = sys.col_insert(sh[1] + 1, zeros(sys.shape[0], 1))
+            #res = linsolve((sys, zeros(sys.shape[0], 1)), *varSol)
+            if res:
+            #if res is not EmptySet():
+                #res = zip(varSol, list(res)[0])
+                #res = self._simplify_res_solve_linear_system(res, var.transpose().tolist()[0])
                 #  substitute the solution
                 varSol = varSol.subs(res[0])
         # now we need to extract the vector again
         tally = []
         for el in varSol.tolist()[0]:
-            #tp = [ell.indices[0] for ell in list(el.find(v[self.p]))]
+            # tp = [ell.indices[0] for ell in list(el.find(v[self.p]))]
             tp = [ell for ell in varnames if list(el.find(ell)) != []]
             tally.append(tp)
         tally = list(set(flatten(tally)))
@@ -1520,27 +1522,35 @@ class LieAlgebra(object):
             tp = cp.deepcopy(varSol)
             for ell in tally:
                 if ell == el:
-            #        tp = tp.subs(v[ell], 1)
+                    #        tp = tp.subs(v[ell], 1)
                     tp = tp.subs(ell, 1)
                 else:
                     tp = tp.subs(ell, 0)
-            #        tp = tp.subs(v[ell], 0)
+            # tp = tp.subs(v[ell], 0)
             res.append(tp)
         return res
 
-    def _simplify_res_solve_linear_system(self, res, symb):
+    def _simplify_res_solve_linear_system(self, res, symbs):
         # simplifies res
         outres = {}
-        for lhs, rhs in res.items():
+        for lhs, rhs in res:
             if lhs != 0:
-                vs = lhs.find(symb[self.p])
-                if len(vs) != 1:
-                    lhsargs = (lhs - rhs).args
-                    smallest_v = sorted([el.args[1] for el in list(vs)])
-                    lhs_factor = lhsargs[0].match(symb[smallest_v[0]] * self.p)[self.p]
-                    rhs = (-lhsargs[1] * 1 / lhs_factor).expand()
-                    outres[symb[smallest_v[0]]] = rhs
+                vs = lhs.args
+                if vs:
+                    # matches only v_x * alpha
+                    fac = [(lhs.match(self.p * ell), ell) for ell in symbs if lhs.match(self.p * ell) is not None]
+                    if fac:
+                        assert len(fac) == 1
+                        outres[fac[0][1]] = rhs * 1 / fac[0][0][self.p]
+                    else:
+                        pudb.set_trace()
+                        lhsargs = (lhs - rhs).args
+                        smallest_v = sorted([el.args[1] for el in list(vs)])
+                        lhs_factor = lhsargs[0].match(symb[smallest_v[0]] * self.p)[self.p]
+                        rhs = (-lhsargs[1] * 1 / lhs_factor).expand()
+                        outres[symb[smallest_v[0]]] = rhs
                 else:
+                    # maybe there is an overall factor still
                     outres[lhs] = rhs
             else:
                 outres[lhs] = rhs
@@ -1728,7 +1738,7 @@ class LieAlgebra(object):
         return prov
 
     def _getFond(self):
-        if self.cartan._name in ['A', 'B', 'D','C']:
+        if self.cartan._name in ['A', 'B', 'D', 'C']:
             fond = np.zeros((1, self._n), dtype=int)
             fond[0, 0] = 1
         else:
