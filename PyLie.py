@@ -18,7 +18,6 @@ from sympy.combinatorics import Permutation
 import copy as cp
 import operator
 import itertools
-import pudb
 
 
 class CartanMatrix(object):
@@ -1543,7 +1542,6 @@ class LieAlgebra(object):
                         assert len(fac) == 1
                         outres[fac[0][1]] = rhs * 1 / fac[0][0][self.p]
                     else:
-                        pudb.set_trace()
                         lhsargs = (lhs - rhs).args
                         smallest_v = sorted([el.args[1] for el in list(vs)])
                         lhs_factor = lhsargs[0].match(symb[smallest_v[0]] * self.p)[self.p]
