@@ -8,10 +8,12 @@ It is a python implementation of the Susyno group method.
 """
 
 import sys
-
 sys.path.insert(0, '/Applications/HEPtools/sympy-1.0')
 import numpy as np
-from sympy import *
+try:
+    from sympy import *
+except ImportError:
+    exit("Error, importing sympy.")
 import time
 from sympy.combinatorics import Permutation
 
