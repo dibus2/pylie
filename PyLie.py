@@ -13,6 +13,7 @@ import numpy as np
 try:
     from sympy import *
 except ImportError:
+    print("Error, importing sympy.")
     exit("Error, importing sympy.")
 import time
 from sympy.combinatorics import Permutation
