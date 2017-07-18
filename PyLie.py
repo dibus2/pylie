@@ -6,7 +6,6 @@ algebra, calculate the system of roots, weights, casimir, dynkin, Matrix represe
 several irrep.
 It is a python implementation of the Susyno group method.
 """
-
 import sys
 sys.path.insert(0, '/Applications/HEPtools/sympy-1.0')
 import numpy as np
@@ -101,7 +100,6 @@ class CartanMatrix(object):
 
     def _fillUpFunctionD(self, i, j):
         return self._fillUpFunctionA(i, j)
-
 
 class LieAlgebra(object):
     """
@@ -931,6 +929,9 @@ class LieAlgebra(object):
         if len(bigMatrix) != 0:
             dt = 100 if len(bigMatrix) < 10000 else 500
             aux4 = self._findNullSpace(bigMatrix, dt)
+            if aux4 == []:
+                #Sometimes sympy is fishy... Let's confirm with the internal null space function
+                aux4 = SparseMatrix(bigMatrix).nullspace()
             # let's construct the invariant combination from the null space solution
             # declare the symbols for the output of the invariants
             expr = []
@@ -1093,6 +1094,8 @@ class LieAlgebra(object):
         if len(bigMatrix) != 0:
             dt = 100 if bigMatrix.shape[0] < 10000 else 500
             aux4 = self._findNullSpace(bigMatrix, dt)
+            if aux4 == []:
+                aux4 = SparseMatrix(bigMatrix).nullspace()
             # let's construct the invariant combination from the null space solution
             # declare the symbols for the output of the invariants
             expr = []
@@ -1250,6 +1253,7 @@ class LieAlgebra(object):
         representations = zip(reps, fakeConjugationCharges)
         representations = [self.conjugateIrrep(representations[i], u1in=True) if cjs[i] else representations[i] for i in
                            range(len(representations))]
+        representations = [(tuple(el[0]),el[1]) for el in representations] #force the conjugated irreps to be tuples for tally below
         if (len(self.math.tally(representations)) == len(representations)):
             return tensor
         symmetries = self.permutationSymmetryOfInvariants(representations, u1in=True)
@@ -1806,7 +1810,6 @@ class LieAlgebra(object):
             self.struc = Structures
             return Structures
 
-
 class Sn:
     def __init__(self):
         # declare a MathGroup object to access the standard method
@@ -2048,7 +2051,6 @@ class Sn:
                   in range(1, n1 + 1)]
         result = factorial(sum(partition)) / reduce(operator.mul, result)
         return result
-
 
 class MathGroup:
     def __init__(self):
